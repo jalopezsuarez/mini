@@ -60,9 +60,9 @@ const macMenu = Menu.buildFromTemplate([
   {
     label: 'File',
     submenu: [
-      { label: 'Open…', accelerator: 'Cmd+O', click: () => mainWindow.webContents.send('menu', 'open') },
-      { label: 'Save', accelerator: 'Cmd+S', click: () => mainWindow.webContents.send('menu', 'save') },
-      { label: 'Save As…', accelerator: 'Shift+Cmd+S', click: () => mainWindow.webContents.send('menu', 'saveAs') },
+      { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => mainWindow.webContents.send('menu', 'open') },
+      { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => mainWindow.webContents.send('menu', 'save') },
+      { label: 'Save As…', accelerator: 'Shift+CmdOrCtrl+S', click: () => mainWindow.webContents.send('menu', 'saveAs') },
     ],
   },
   {
