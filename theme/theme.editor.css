@@ -34,8 +34,8 @@
   --rule:       #3a3735;
   --quote-bar:  #c96442;
 
-  --serif: 'source-serif', -apple-system, system-ui, sans-serif;
-  --sans:  'source-serif', -apple-system, system-ui, sans-serif;
+  --serif: 'copernicus', -apple-system, system-ui, sans-serif;
+  --sans:  'copernicus', -apple-system, system-ui, sans-serif;
   --mono:  'sf-mono', ui-monospace, monospace;
 }
 

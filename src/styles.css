@@ -128,7 +128,7 @@ textarea#source::selection {
   gap: 16px;
   padding: 0 14px;
   border-top: 1px solid var(--border);
-  background: #191a1b;
+  background: #1a1919;
   user-select: none;
   overflow: hidden;
 }

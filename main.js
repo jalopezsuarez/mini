@@ -43,14 +43,15 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
 
-  // Reload is intentionally disabled. Block every known reload shortcut
-  // at the webContents level (menu item is also gone). To pick up code
-  // changes the user must close and reopen the app.
+  // Reload is intentionally disabled. Block F5 and ⌘⇧R / Ctrl+Shift+R at
+  // the webContents level (menu item is also gone). Plain ⌘R / Ctrl+R is
+  // the editor's blockquote shortcut — the renderer handles it and calls
+  // preventDefault, so no reload fires there either.
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const k = (input.key || '').toLowerCase();
     if (k === 'f5') return event.preventDefault();
-    if ((input.meta || input.control) && k === 'r') return event.preventDefault();
+    if ((input.meta || input.control) && input.shift && k === 'r') return event.preventDefault();
   });
 }
 
