@@ -102,7 +102,17 @@ npm run package:universal
 npm run package:win
 ```
 
-The resulting bundle ends up in `dist/`.
+The resulting bundle ends up in `dist/`. On macOS the build is **ad-hoc signed and zipped with `ditto`** (see `scripts/sign-mac.sh`) so Gatekeeper doesn't flag the download as *"mini" is damaged and can't be opened*.
+
+### First launch on macOS
+
+`mini` is signed ad-hoc, not with an Apple Developer ID, so the very first time you open it macOS will show *"mini" can't be opened because it is from an unidentified developer*. To bypass it just **right-click `mini.app` → Open** once. Afterwards it launches normally like any other app.
+
+If you ever do see the *"is damaged"* dialog (very old downloads, unusual mirrors), strip the quarantine attribute manually:
+
+```bash
+xattr -cr /Applications/mini.app
+```
 
 ### `mini` terminal command  *(macOS only)*
 

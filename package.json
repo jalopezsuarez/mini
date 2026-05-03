@@ -7,9 +7,9 @@
     "build": "esbuild src/renderer.js --bundle --outfile=src/renderer.bundle.js --format=iife --platform=browser --sourcemap",
     "watch": "esbuild src/renderer.js --bundle --outfile=src/renderer.bundle.js --format=iife --platform=browser --sourcemap --watch",
     "start": "npm run build && electron .",
-    "package": "npm run build && electron-packager . mini --platform=darwin --arch=arm64 --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.0 --icon=build/icon.icns",
-    "package:intel": "npm run build && electron-packager . mini --platform=darwin --arch=x64 --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.0 --icon=build/icon.icns",
-    "package:universal": "npm run build && electron-packager . mini --platform=darwin --arch=universal --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.0 --icon=build/icon.icns",
+    "package": "npm run build && electron-packager . mini --platform=darwin --arch=arm64 --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.0 --icon=build/icon.icns && scripts/sign-mac.sh dist/mini-darwin-arm64 dist/mini-0.2.0-arm64.zip",
+    "package:intel": "npm run build && electron-packager . mini --platform=darwin --arch=x64 --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.0 --icon=build/icon.icns && scripts/sign-mac.sh dist/mini-darwin-x64 dist/mini-0.2.0-x64.zip",
+    "package:universal": "npm run build && electron-packager . mini --platform=darwin --arch=universal --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.0 --icon=build/icon.icns && scripts/sign-mac.sh dist/mini-darwin-universal dist/mini-0.2.0-universal.zip",
     "package:win": "npm run build && electron-packager . mini --platform=win32 --arch=x64 --overwrite --out=dist --app-version=0.2.0"
   },
   "dependencies": {
