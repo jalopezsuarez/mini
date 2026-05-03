@@ -1,4 +1,4 @@
-# mini
+# mini - Minimalist Markdown Editor
 
 **Write without distractions. Publish without friction.**
 
