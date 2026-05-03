@@ -34,9 +34,9 @@
   --rule:       #3a3735;
   --quote-bar:  #c96442;
 
-  --serif: 'copernicus', ui-serif, serif;
-  --sans:  'copernicus', -apple-system, system-ui, sans-serif;  
-  --mono:  ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  --serif: 'source-serif', -apple-system, system-ui, sans-serif;
+  --sans:  'source-serif', -apple-system, system-ui, sans-serif;
+  --mono:  'sf-mono', ui-monospace, monospace;
 }
 
 html, body {

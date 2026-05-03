@@ -38,7 +38,7 @@ html, body {
 
 .app {
   display: grid;
-  grid-template-rows: 36px 1fr 44px 4px;
+  grid-template-rows: 36px 1fr 40px 4px;
   height: 100vh;
 }
 
@@ -124,7 +124,7 @@ textarea#source::selection {
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 16px;
   padding: 0 14px;
   border-top: 1px solid var(--border);
@@ -132,23 +132,61 @@ textarea#source::selection {
   user-select: none;
   overflow: hidden;
 }
-.tools { justify-content: center; }
 
 .tools {
   display: flex;
   align-items: center;
   gap: 2px;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
   min-width: 0;
-  scrollbar-width: none;          /* Firefox */
-  -webkit-overflow-scrolling: touch;
-  cursor: grab;
+  overflow: hidden;
 }
-.tools::-webkit-scrollbar { display: none; }
-.tools.dragging { cursor: grabbing; }
 .tools .tool-btn { flex: 0 0 auto; }
+
+/* Collapse / expand button — visually identical in both spots.
+ * Toolbar variant sits at the right edge of the bar (transparent).
+ * FAB variant floats bottom-right with the same pill treatment as
+ * .line-info so they read as the same family. */
+.toolbar-collapse,
+.toolbar-fab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.toolbar-collapse { flex: 0 0 auto; }
+.toolbar-collapse:hover { color: var(--fg); background: rgba(255, 255, 255, 0.06); }
+
+.toolbar-fab {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 10;
+  display: none;
+  background: rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.toolbar-fab:hover { color: var(--fg); background: rgba(0, 0, 0, 0.32); }
+
+.toolbar-collapse svg,
+.toolbar-fab svg { display: block; }
+
+/* Collapsed state */
+.app[data-toolbar="collapsed"] {
+  grid-template-rows: 36px 1fr 0 4px;
+}
+.app[data-toolbar="collapsed"] .toolbar { display: none; }
+.app[data-toolbar="collapsed"] .toolbar-fab { display: inline-flex; }
 
 .tools .tool-btn {
   display: inline-flex;
@@ -240,8 +278,11 @@ textarea#source::selection {
   position: absolute;
   top: 6px;
   right: 6px;
-  font-size: 11px;
-  padding: 3px 8px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.06);
   color: var(--fg-dim, #8b8782);
@@ -250,10 +291,9 @@ textarea#source::selection {
   -webkit-user-select: none;
   opacity: 0;
   transition: opacity .15s ease, color .15s ease, background .15s ease;
-  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  letter-spacing: 0.02em;
   pointer-events: none;
 }
+.pane.editor .code-copy svg { display: block; }
 .pane.editor pre:hover .code-copy { opacity: 1; pointer-events: auto; }
 .pane.editor .code-copy:hover {
   color: var(--fg, #e7e5e2);

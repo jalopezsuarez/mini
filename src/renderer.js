@@ -470,9 +470,146 @@ function htmlToMd(html) {
  * View toggling
  * ============================================================ */
 
+/* Caret preservation across ⌘M.
+ *
+ * Both views show "the same" document but with very different character
+ * counts: source has markdown markers, the rendered editor doesn't. We
+ * map between them via a "plain-text offset" — i.e. how many *visible*
+ * characters precede the caret. The mapping is heuristic (best-effort),
+ * not a full markdown parser. It handles the common cases: headings,
+ * blockquotes, list markers, fenced code, emphasis pairs and links. */
+function buildPlainMap(md) {
+  const out = new Array(md.length + 1);
+  out[0] = 0;
+  let plain = 0;
+  let i = 0;
+  let inFence = false;
+
+  const skipLineSyntax = (start) => {
+    let k = 0;
+    while (md[start + k] === '>') {
+      k++;
+      if (md[start + k] === ' ') k++;
+    }
+    let s = 0;
+    while (md[start + k + s] === ' ' && s < 4) s++;
+    k += s;
+    const m = md.slice(start + k).match(/^(?:[-*+]|\d+\.) /);
+    if (m) k += m[0].length;
+    let h = 0;
+    while (md[start + k + h] === '#' && h < 6) h++;
+    if (h > 0 && md[start + k + h] === ' ') k += h + 1;
+    return k;
+  };
+
+  while (i < md.length) {
+    const atLineStart = (i === 0 || md[i - 1] === '\n');
+
+    if (atLineStart) {
+      if (md.slice(i, i + 3) === '```') {
+        inFence = !inFence;
+        const eol = md.indexOf('\n', i);
+        const stop = eol === -1 ? md.length : eol;
+        while (i < stop) { i++; out[i] = plain; }
+        continue;
+      }
+      if (!inFence) {
+        const skip = skipLineSyntax(i);
+        for (let k = 0; k < skip; k++) { i++; out[i] = plain; }
+        if (i >= md.length) break;
+      }
+    }
+
+    const c = md[i];
+
+    if (c === '\n') {
+      i++; out[i] = plain;       // newlines don't add to plain offset:
+      continue;                  // editor.textContent has no \n between blocks
+    }
+
+    if (!inFence) {
+      if ((c === '*' || c === '_') && md[i + 1] === c) {
+        i++; out[i] = plain; i++; out[i] = plain; continue;
+      }
+      if (c === '~' && md[i + 1] === '~') {
+        i++; out[i] = plain; i++; out[i] = plain; continue;
+      }
+      if (c === '*' || c === '_' || c === '`') {
+        i++; out[i] = plain; continue;
+      }
+      if (c === '[') {
+        const close = md.indexOf(']', i + 1);
+        if (close > i && md[close + 1] === '(') {
+          const finish = md.indexOf(')', close + 2);
+          if (finish > close) {
+            i++; out[i] = plain;                              // [
+            while (i < close) { plain++; i++; out[i] = plain; }   // text
+            while (i <= finish) { i++; out[i] = plain; }      // ](url)
+            continue;
+          }
+        }
+      }
+    }
+
+    plain++; i++; out[i] = plain;
+  }
+  return out;
+}
+
+function getEditorPlainOffset() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  if (!editor.contains(r.startContainer)) return null;
+  const pre = document.createRange();
+  pre.selectNodeContents(editor);
+  pre.setEnd(r.startContainer, r.startOffset);
+  return pre.toString().length;
+}
+
+function placeEditorCaretAtPlainOffset(target) {
+  if (target == null) return;
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let n, count = 0, last = null;
+  while ((n = walker.nextNode())) {
+    last = n;
+    const len = n.nodeValue.length;
+    if (count + len >= target) {
+      const range = document.createRange();
+      range.setStart(n, Math.max(0, target - count));
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return;
+    }
+    count += len;
+  }
+  const range = document.createRange();
+  if (last) range.setStart(last, last.nodeValue.length);
+  else { range.selectNodeContents(editor); range.collapse(false); }
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function sourceCaretToPlain(srcOffset) {
+  const map = buildPlainMap(source.value);
+  return map[Math.min(srcOffset, map.length - 1)] ?? 0;
+}
+
+function plainToSourceCaret(plain, src) {
+  const map = buildPlainMap(src);
+  for (let i = 0; i < map.length; i++) {
+    if (map[i] >= plain) return i;
+  }
+  return src.length;
+}
+
 function setMode(mode) {
   if (mode === state.mode) return;
   if (mode === 'editor') {
+    const plain = sourceCaretToPlain(source.selectionStart);
     editor.innerHTML = mdToHtml(source.value);
     ensureTrailingParagraph();
     source.hidden = true;
@@ -480,8 +617,12 @@ function setMode(mode) {
     editor.hidden = false;
     state.mode = 'editor';
     app.dataset.mode = 'editor';
-    requestAnimationFrame(() => editor.focus());
+    requestAnimationFrame(() => {
+      editor.focus();
+      placeEditorCaretAtPlainOffset(plain);
+    });
   } else {
+    const plain = getEditorPlainOffset();
     source.value = htmlToMd(editor.innerHTML);
     editor.hidden = true;
     source.hidden = false;
@@ -489,7 +630,14 @@ function setMode(mode) {
     highlightSource();
     state.mode = 'source';
     app.dataset.mode = 'source';
-    requestAnimationFrame(() => source.focus());
+    const caret = plain == null ? 0 : plainToSourceCaret(plain, source.value);
+    requestAnimationFrame(() => {
+      source.focus();
+      source.selectionStart = source.selectionEnd = caret;
+      const lineH = parseFloat(getComputedStyle(source).lineHeight) || 20;
+      const linesAbove = source.value.slice(0, caret).split('\n').length - 1;
+      source.scrollTop = Math.max(0, linesAbove * lineH - source.clientHeight / 2);
+    });
     updateMeta();
   }
   updateProgress();
@@ -1809,14 +1957,30 @@ const trailingObserver = new MutationObserver(() => {
 });
 trailingObserver.observe(editor, { childList: true });
 
-/* Floating "Copy" button on each <pre> in editor mode.
+/* Floating copy button on each <pre> in editor mode.
  * Marked contenteditable=false and class="code-copy" — htmlToMd skips it. */
+const COPY_ICON_SVG = `
+<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+  <rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.5"
+        fill="none" stroke="currentColor" stroke-width="1.3"/>
+  <path d="M2.75 10.5 V3.75 a1.5 1.5 0 0 1 1.5 -1.5 H10.5"
+        fill="none" stroke="currentColor" stroke-width="1.3"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+const CHECK_ICON_SVG = `
+<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+  <path d="M3 8.5 L6.5 12 L13 4.5" fill="none" stroke="currentColor"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
 function decorateCodeBlocks() {
   for (const pre of editor.querySelectorAll('pre')) {
     if (pre.querySelector(':scope > .code-copy')) continue;
     const btn = document.createElement('div');
     btn.className = 'code-copy';
-    btn.textContent = 'Copy';
+    btn.innerHTML = COPY_ICON_SVG;
+    btn.title = 'Copy';
+    btn.setAttribute('aria-label', 'Copy code');
     btn.contentEditable = 'false';
     btn.setAttribute('aria-hidden', 'false');
     btn.addEventListener('mousedown', (e) => e.preventDefault());
@@ -1826,10 +1990,10 @@ function decorateCodeBlocks() {
       const code = pre.querySelector('code');
       const text = (code ? code.textContent : pre.textContent).replace(/​/g, '');
       navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = 'Copied';
+        btn.innerHTML = CHECK_ICON_SVG;
         btn.classList.add('copied');
         setTimeout(() => {
-          btn.textContent = 'Copy';
+          btn.innerHTML = COPY_ICON_SVG;
           btn.classList.remove('copied');
         }, 1200);
       }).catch(() => {});
@@ -1922,35 +2086,18 @@ function syncFromEditor() {
  * Wiring
  * ============================================================ */
 
-/* Toolbar:
- *  - Items are span.tool-btn (no native button semantics).
- *  - Container .tools scrolls horizontally when overflowing.
- *  - Drag (mousedown + move) on the container scrolls horizontally.
- *  - A click that didn't move > 4px still fires the command. */
-const toolsEl = document.querySelector('.tools');
-let drag = null;
-
-toolsEl.addEventListener('mousedown', (e) => {
-  drag = { x: e.clientX, scroll: toolsEl.scrollLeft, moved: 0 };
-});
-window.addEventListener('mousemove', (e) => {
-  if (!drag) return;
-  const dx = e.clientX - drag.x;
-  if (Math.abs(dx) > 2) toolsEl.classList.add('dragging');
-  drag.moved = Math.max(drag.moved, Math.abs(dx));
-  toolsEl.scrollLeft = drag.scroll - dx;
-});
-window.addEventListener('mouseup', () => {
-  if (drag) toolsEl.classList.remove('dragging');
-  drag = null;
-});
-
-/* Convert vertical wheel into horizontal scroll for usability. */
-toolsEl.addEventListener('wheel', (e) => {
-  if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
-  e.preventDefault();
-  toolsEl.scrollLeft += e.deltaY;
-}, { passive: false });
+/* Toolbar collapse / expand — state persisted to localStorage */
+const collapseBtn = document.getElementById('toolbar-collapse');
+const fabBtn      = document.getElementById('toolbar-fab');
+const TOOLBAR_KEY = 'mini.toolbarCollapsed';
+const setCollapsed = (v) => {
+  if (v) app.setAttribute('data-toolbar', 'collapsed');
+  else   app.removeAttribute('data-toolbar');
+  try { localStorage.setItem(TOOLBAR_KEY, v ? '1' : '0'); } catch {}
+};
+setCollapsed(localStorage.getItem(TOOLBAR_KEY) === '1');
+collapseBtn.addEventListener('click', () => setCollapsed(true));
+fabBtn.addEventListener('click', () => setCollapsed(false));
 
 /* Tool labels are display-only — interactivity disabled by CSS. */
 

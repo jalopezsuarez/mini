@@ -27,8 +27,8 @@
   --selection: #3a3633;
   --caret:     #c96442;
 
-  --mono: ui-monospace, "SF Mono", Menlo, Monaco, "JetBrains Mono", Consolas, monospace;
-  --serif-fallback: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --mono: 'sf-mono', ui-monospace, monospace;
+  --serif-fallback: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
 
 html, body {

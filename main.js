@@ -82,9 +82,6 @@ const macMenu = Menu.buildFromTemplate([
   {
     label: 'View',
     submenu: [
-      { role: 'reload', accelerator: 'Shift+Cmd+R' },
-      { role: 'toggleDevTools' },
-      { type: 'separator' },
       { role: 'togglefullscreen' },
       { type: 'separator' },
       { label: 'Increase Font', accelerator: 'Shift+CommandOrControl+Plus',
