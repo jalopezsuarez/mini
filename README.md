@@ -164,7 +164,8 @@ And the **highlight tokens** (headers, lists, quotes, code, emphasis):
 theme/
 ├── Inter.ttf            → font-family: 'Inter'
 ├── JetBrainsMono.ttf    → font-family: 'JetBrainsMono'
-└── copernicus.ttf       → font-family: 'copernicus' (bundled by default)
+├── sf-mono.ttf          → font-family: 'sf-mono'        (bundled by default)
+└── source-serif.ttf     → font-family: 'source-serif'   (bundled by default)
 ```
 
 **Step 2 — use it in the theme.** Each CSS file exposes typography variables:
@@ -172,14 +173,14 @@ theme/
 ```css
 /* theme.source.css */
 :root {
-  --mono: 'JetBrainsMono', ui-monospace, "SF Mono", Menlo, monospace;
+  --mono: 'sf-mono', ui-monospace, monospace;
 }
 
 /* theme.editor.css */
 :root {
-  --serif: 'copernicus', ui-serif, serif;
-  --sans:  'Inter', -apple-system, system-ui, sans-serif;
-  --mono:  ui-monospace, "SF Mono", Menlo, monospace;
+  --serif: 'source-serif', -apple-system, system-ui, sans-serif;
+  --sans:  'source-serif', -apple-system, system-ui, sans-serif;
+  --mono:  'sf-mono', ui-monospace, monospace;
 }
 ```
 
