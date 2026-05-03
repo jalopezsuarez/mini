@@ -1,16 +1,178 @@
 /* --------------------------------------------------------------
- * mini — renderer. Pure vanilla JS. Zero runtime deps.
+ * mini — renderer. Source pane is CodeMirror 6; everything else is
+ * vanilla JS. The textarea API (value, selectionStart/End, scroll,
+ * addEventListener) is preserved by a shim so the rest of this file
+ * keeps working unchanged.
  * -------------------------------------------------------------- */
+
+import {
+  EditorState, EditorSelection, Annotation, RangeSetBuilder,
+} from '@codemirror/state';
+import { EditorView, drawSelection, keymap, Decoration, ViewPlugin } from '@codemirror/view';
+import {
+  defaultKeymap, history, historyKeymap,
+  undo as cmUndo, redo as cmRedo,
+} from '@codemirror/commands';
+import { markdown } from '@codemirror/lang-markdown';
+import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
+import { tags as t } from '@lezer/highlight';
 
 const $  = (id) => document.getElementById(id);
 const app    = document.querySelector('.app');
-const source = $('source');
-const sourceHL = $('source-hl');
 const editor = $('editor');
-const dirtyDot = $('dirty-dot');
 const docTitle = $('doc-title');
 const lineInfo = $('line-info');
 const progressBar = $('progress-bar');
+
+/* ============================================================
+ * CodeMirror 6 source pane
+ * ============================================================ */
+
+// Map markdown tokens to mini's existing .hl-* classes so
+// theme/theme.source.css continues to control the colours.
+const miniHL = HighlightStyle.define([
+  { tag: t.heading,        class: 'hl-h'  },
+  { tag: t.list,            class: 'hl-l'  },
+  { tag: t.quote,           class: 'hl-q'  },
+  { tag: t.monospace,       class: 'hl-c'  },
+  { tag: t.emphasis,        class: 'hl-em' },
+  { tag: t.strong,          class: 'hl-em' },
+]);
+
+// Drop Tab and Enter from the default keymap — mini's own keydown
+// handlers (auto-continue list / quote markers, smart indent) take
+// over for those keys.
+const filteredDefaultKeymap = defaultKeymap.filter(
+  (b) => b.key !== 'Enter' && b.key !== 'Tab' && b.key !== 'Shift-Tab'
+);
+
+const inputListeners = [];
+
+
+// Find/replace highlight overlay — driven by our own `findState.matches`
+// (which is computed with unicode-aware whole-word semantics), not by
+// @codemirror/search. Refresh is kicked by an annotation when the
+// match list or current index changes.
+const findRefresh = Annotation.define();
+const findMatchDeco   = Decoration.mark({ class: 'mini-find-match' });
+const findCurrentDeco = Decoration.mark({ class: 'mini-find-current' });
+const miniFindHighlighter = ViewPlugin.fromClass(class {
+  constructor(view) { this.decorations = this.build(view); }
+  update(u) {
+    if (u.docChanged || u.viewportChanged ||
+        u.transactions.some((tr) => tr.annotation(findRefresh) !== undefined)) {
+      this.decorations = this.build(u.view);
+    }
+  }
+  build(view) {
+    if (!findState.open || !findState.matches.length) return Decoration.none;
+    const builder = new RangeSetBuilder();
+    for (const { from, to } of view.visibleRanges) {
+      for (let i = 0; i < findState.matches.length; i++) {
+        const m = findState.matches[i];
+        if (m.end < from || m.start > to) continue;
+        builder.add(m.start, m.end,
+          i === findState.index ? findCurrentDeco : findMatchDeco);
+      }
+    }
+    return builder.finish();
+  }
+}, { decorations: (v) => v.decorations });
+
+function refreshFindDeco() {
+  cmView.dispatch({ annotations: findRefresh.of(Date.now()) });
+}
+
+// Re-usable extension list. Every tab gets its own EditorState built
+// from this set, so each tab keeps an independent rope, undo history
+// and decoration plugins. Switching tabs becomes a single setState.
+const cmExtensions = [
+  history(),
+  drawSelection(),
+  markdown(),
+  syntaxHighlighting(miniHL),
+  EditorView.lineWrapping,
+  miniFindHighlighter,
+  keymap.of([...filteredDefaultKeymap, ...historyKeymap]),
+  EditorView.updateListener.of((v) => {
+    if (!v.docChanged) return;
+    // Only fire `input` for user-driven changes; programmatic value
+    // assignments via the shim use plain dispatches (no userEvent),
+    // so they won't accidentally flip the dirty flag.
+    const fromUser = v.transactions.some((tr) =>
+      tr.isUserEvent('input') ||
+      tr.isUserEvent('delete') ||
+      tr.isUserEvent('paste') ||
+      tr.isUserEvent('drop') ||
+      tr.isUserEvent('move')
+    );
+    if (!fromUser) return;
+    const ev = new Event('input');
+    for (const fn of inputListeners) fn(ev);
+  }),
+];
+
+function makeCMState(doc) {
+  return EditorState.create({ doc: doc || '', extensions: cmExtensions });
+}
+
+const cmView = new EditorView({
+  parent: $('source-host'),
+  state: makeCMState(''),
+});
+
+// Shim that mirrors the textarea API used elsewhere in this file.
+const source = {
+  get value()  { return cmView.state.doc.toString(); },
+  set value(v) {
+    cmView.dispatch({
+      changes: { from: 0, to: cmView.state.doc.length, insert: v ?? '' },
+      selection: { anchor: 0 },
+      scrollIntoView: false,
+    });
+  },
+  get selectionStart() { return cmView.state.selection.main.from; },
+  set selectionStart(p) {
+    const cur = cmView.state.selection.main;
+    const head = Math.max(p, cur.to);
+    cmView.dispatch({ selection: { anchor: p, head } });
+  },
+  get selectionEnd()   { return cmView.state.selection.main.to; },
+  set selectionEnd(p) {
+    const cur = cmView.state.selection.main;
+    const anchor = Math.min(p, cur.from);
+    cmView.dispatch({ selection: { anchor, head: p } });
+  },
+  get scrollTop()    { return cmView.scrollDOM.scrollTop; },
+  set scrollTop(v)   { cmView.scrollDOM.scrollTop = v; },
+  get scrollLeft()   { return cmView.scrollDOM.scrollLeft; },
+  set scrollLeft(v)  { cmView.scrollDOM.scrollLeft = v; },
+  get clientHeight() { return cmView.scrollDOM.clientHeight; },
+  get clientWidth()  { return cmView.scrollDOM.clientWidth; },
+  get hidden()       { return $('source-host').hidden; },
+  set hidden(v)      { $('source-host').hidden = !!v; },
+  focus() { cmView.focus(); },
+  blur()  { cmView.contentDOM.blur(); },
+  dispatchEvent(ev) {
+    if (ev && ev.type === 'input') {
+      for (const fn of inputListeners) fn(ev);
+      return true;
+    }
+    return cmView.dom.dispatchEvent(ev);
+  },
+  addEventListener(type, fn, opts) {
+    if (type === 'input') { inputListeners.push(fn); return; }
+    if (type === 'scroll') { cmView.scrollDOM.addEventListener(type, fn, opts); return; }
+    // Keyboard / pointer / focus events: capture so we run BEFORE
+    // CodeMirror's own bubble-phase keymap listener.
+    if (type === 'keydown' || type === 'keyup' || type === 'keypress') {
+      cmView.contentDOM.addEventListener(type, fn, opts ?? { capture: true });
+      return;
+    }
+    cmView.contentDOM.addEventListener(type, fn, opts);
+  },
+};
+
 
 const state = {
   filePath: null,
@@ -74,24 +236,18 @@ function snapshotState() {
 
 function restoreSnapshot(s) {
   if (s.mode !== state.mode) {
-    if (s.mode === 'editor') {
-      source.hidden = true; sourceHL.hidden = true; editor.hidden = false;
-    } else {
-      editor.hidden = true; source.hidden = false; sourceHL.hidden = false;
-    }
+    if (s.mode === 'editor') { source.hidden = true;  editor.hidden = false; }
+    else                     { editor.hidden = true;  source.hidden = false; }
     state.mode = s.mode;
     app.dataset.mode = s.mode;
   }
   source.value = s.source;
   source.selectionStart = s.sourceStart;
-  source.selectionEnd = s.sourceEnd;
-  source.scrollTop = s.sourceScroll;
-  editor.innerHTML = s.editor;
-  editor.scrollTop = s.editorScroll;
-  if (state.mode === 'source') {
-    highlightSource();
-    sourceHL.scrollTop = s.sourceScroll;
-  } else {
+  source.selectionEnd   = s.sourceEnd;
+  source.scrollTop      = s.sourceScroll;
+  editor.innerHTML  = s.editor;
+  editor.scrollTop  = s.editorScroll;
+  if (state.mode === 'editor') {
     ensureTrailingParagraph();
     setEditorCaretByOffset(s.editorOffset);
   }
@@ -100,6 +256,11 @@ function restoreSnapshot(s) {
 }
 
 function pushUndo(kind) {
+  // Source-mode history is owned by CodeMirror — skip our snapshot
+  // entirely so we don't keep megabyte-scale copies of the document
+  // around for every keystroke.
+  if (state.mode === 'source') return;
+
   const now = Date.now();
   if (kind && kind === lastUndoKind && now - lastUndoTime < UNDO_GROUP_MS) {
     lastUndoTime = now;
@@ -125,10 +286,18 @@ function redo() {
   lastUndoKind = null;
 }
 
-source.addEventListener('beforeinput', () => pushUndo('source-input'));
+// Editor-mode contenteditable still needs our snapshot stack — its
+// DOM operations aren't covered by any standard history. Source-mode
+// editing goes through CodeMirror, whose own `history()` extension
+// records a finer-grained, memory-efficient timeline.
 editor.addEventListener('beforeinput', () => pushUndo('editor-input'));
 
 window.mini.onAppCmd((cmd) => {
+  if (state.mode === 'source') {
+    if (cmd === 'undo') return cmUndo(cmView);
+    if (cmd === 'redo') return cmRedo(cmView);
+    return;
+  }
   if (cmd === 'undo') undo();
   if (cmd === 'redo') redo();
 });
@@ -251,64 +420,6 @@ function highlightInline(escaped) {
   return s;
 }
 
-// Anything bigger than this skips syntax highlighting, the editor-pane
-// rebuild and the find overlay. The textarea itself can hold the text;
-// what kills the UI is iterating it on every keystroke.
-const LARGE_DOC = 16 * 1024 * 1024;   // 16 MB
-function isLargeDoc(text) { return (text || '').length > LARGE_DOC; }
-
-function applyLargeDocClass() {
-  document.body.classList.toggle('huge-doc', isLargeDoc(source.value));
-}
-
-function highlightSource() {
-  applyLargeDocClass();
-  if (isLargeDoc(source.value)) {
-    // Skip tokenization for huge docs — body.huge-doc switches the
-    // textarea text to be visible directly so the user still sees it.
-    sourceHL.textContent = '';
-    return;
-  }
-  const lines = source.value.split('\n');
-  let inFence = false;
-  const out = lines.map((line) => {
-    if (/^```/.test(line)) {
-      inFence = !inFence;
-      return `<span class="hl-c">${escapeHtml(line)}</span>`;
-    }
-    // Inside a fenced block → whole line in code colour.
-    if (inFence) return `<span class="hl-c">${escapeHtml(line)}</span>`;
-
-    // Header — colour the entire line
-    if (/^#{1,6}(\s|$)/.test(line)) {
-      return `<span class="hl-h">${escapeHtml(line)}</span>`;
-    }
-    // Blockquote — colour the entire line
-    if (/^>\s?/.test(line)) {
-      return `<span class="hl-q">${escapeHtml(line)}</span>`;
-    }
-    // Table row (separator or content) → entire line in table colour.
-    if (/^\s*\|.*\|\s*$/.test(line)) {
-      return `<span class="hl-t">${escapeHtml(line)}</span>`;
-    }
-    let m;
-    // Bullet list marker
-    m = line.match(/^(\s*)([-*]\s)(.*)$/);
-    if (m) {
-      return `${escapeHtml(m[1])}<span class="hl-l">${escapeHtml(m[2])}</span>${highlightInline(escapeHtml(m[3]))}`;
-    }
-    // Numbered list marker
-    m = line.match(/^(\s*)(\d+\.\s)(.*)$/);
-    if (m) {
-      return `${escapeHtml(m[1])}<span class="hl-l">${escapeHtml(m[2])}</span>${highlightInline(escapeHtml(m[3]))}`;
-    }
-    return highlightInline(escapeHtml(line));
-  });
-  const html = out.join('\n');
-  // trailing space → keeps the empty last line at full line-height,
-  // so the textarea's caret on a blank tail line lines up with the overlay
-  sourceHL.innerHTML = html + '\n ';
-}
 
 function inlineMd(text) {
   // Protect code spans and raw <u>…</u> spans before HTML-escaping
@@ -649,16 +760,12 @@ const VIEW_MODE_KEY = 'mini.viewMode';
 
 function setMode(mode) {
   if (mode === state.mode) return;
-  // The editor pane uses mdToHtml + contenteditable, which doesn't scale
-  // to multi-MB documents. Stay in source mode silently for huge docs.
-  if (mode === 'editor' && isLargeDoc(source.value)) return;
   try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
   if (mode === 'editor') {
     const plain = sourceCaretToPlain(source.selectionStart);
     editor.innerHTML = mdToHtml(source.value);
     ensureTrailingParagraph();
     source.hidden = true;
-    sourceHL.hidden = true;
     editor.hidden = false;
     state.mode = 'editor';
     app.dataset.mode = 'editor';
@@ -671,17 +778,14 @@ function setMode(mode) {
     source.value = htmlToMd(editor.innerHTML);
     editor.hidden = true;
     source.hidden = false;
-    sourceHL.hidden = false;
-    highlightSource();
     state.mode = 'source';
     app.dataset.mode = 'source';
     const caret = plain == null ? 0 : plainToSourceCaret(plain, source.value);
     requestAnimationFrame(() => {
       source.focus();
       source.selectionStart = source.selectionEnd = caret;
-      const lineH = parseFloat(getComputedStyle(source).lineHeight) || 20;
-      const linesAbove = source.value.slice(0, caret).split('\n').length - 1;
-      source.scrollTop = Math.max(0, linesAbove * lineH - source.clientHeight / 2);
+      // CodeMirror handles scroll-into-view via scrollIntoView option
+      cmView.dispatch({ selection: { anchor: caret }, scrollIntoView: true });
     });
     updateMeta();
   }
@@ -708,42 +812,118 @@ function getSel() {
 }
 
 function setRange(value, selStart, selEnd) {
-  source.value = value;
-  source.selectionStart = selStart;
-  source.selectionEnd = selEnd;
-  source.dispatchEvent(new Event('input'));
+  // Diff old vs new and dispatch only the differing range so a small
+  // edit doesn't replace the whole document. The diff iterates the
+  // doc's rope chunks via `doc.iter()` instead of allocating a flat
+  // string with toString() — keeps memory usage flat for huge files.
+  const doc = cmView.state.doc;
+  const oldLen = doc.length;
+  const newLen = value.length;
+
+  // common prefix (forward)
+  let from = 0;
+  if (newLen > 0 && oldLen > 0) {
+    const it = doc.iter();
+    it.next();
+    while (!it.done && from < newLen) {
+      const c = it.value;
+      const limit = Math.min(c.length, newLen - from);
+      let i = 0;
+      while (i < limit && c.charCodeAt(i) === value.charCodeAt(from + i)) i++;
+      from += i;
+      if (i < c.length || from === newLen) break;
+      it.next();
+    }
+  }
+
+  // common suffix (backward)
+  let toOld = oldLen;
+  let toNew = newLen;
+  if (toOld > from && toNew > from) {
+    const it = doc.iter(-1);
+    it.next();
+    while (!it.done && toOld > from && toNew > from) {
+      const c = it.value;
+      const limit = Math.min(c.length, toNew - from, toOld - from);
+      let i = 0;
+      while (i < limit &&
+             c.charCodeAt(c.length - 1 - i) === value.charCodeAt(toNew - 1 - i)) i++;
+      toOld -= i;
+      toNew -= i;
+      if (i < c.length) break;
+      it.next();
+    }
+  }
+
+  // Skip the dispatch entirely when there's no actual diff — only
+  // update the selection if it has to move.
+  if (from === toOld && from === toNew) {
+    const sel = cmView.state.selection.main;
+    if (sel.from !== selStart || sel.to !== selEnd) {
+      cmView.dispatch({ selection: { anchor: selStart, head: selEnd } });
+    }
+    return;
+  }
+  cmView.dispatch({
+    changes: { from, to: toOld, insert: value.slice(from, toNew) },
+    selection: { anchor: selStart, head: selEnd },
+    userEvent: 'input.replace',
+  });
 }
 
 function toggleWrap(open, close = open) {
-  const { start, end, value } = getSel();
-  const sel = value.slice(start, end);
+  const doc = cmView.state.doc;
+  const sel = cmView.state.selection.main;
+  const start = sel.from, end = sel.to;
+  const docLen = doc.length;
+  const selText = doc.sliceString(start, end);
 
   // Already wrapped immediately outside the selection?
-  const before = value.slice(Math.max(0, start - open.length), start);
-  const after  = value.slice(end, end + close.length);
+  const beforeStart = Math.max(0, start - open.length);
+  const afterEnd   = Math.min(docLen, end + close.length);
+  const before = doc.sliceString(beforeStart, start);
+  const after  = doc.sliceString(end, afterEnd);
   if (before === open && after === close) {
-    setRange(
-      value.slice(0, start - open.length) + sel + value.slice(end + close.length),
-      start - open.length,
-      end - open.length
-    );
+    cmView.dispatch({
+      changes: [
+        { from: start - open.length, to: start, insert: '' },
+        { from: end,                 to: end + close.length, insert: '' },
+      ],
+      selection: { anchor: start - open.length, head: end - open.length },
+      userEvent: 'input.replace',
+    });
     return;
   }
 
   // Selection itself is wrapped?
-  if (sel.length >= open.length + close.length &&
-      sel.startsWith(open) && sel.endsWith(close)) {
-    const inner = sel.slice(open.length, sel.length - close.length);
-    setRange(value.slice(0, start) + inner + value.slice(end), start, start + inner.length);
+  if (selText.length >= open.length + close.length &&
+      selText.startsWith(open) && selText.endsWith(close)) {
+    cmView.dispatch({
+      changes: [
+        { from: start,                 to: start + open.length, insert: '' },
+        { from: end - close.length,    to: end,                  insert: '' },
+      ],
+      selection: { anchor: start, head: end - open.length - close.length },
+      userEvent: 'input.replace',
+    });
     return;
   }
 
-  if (sel.length === 0) {
-    const v = value.slice(0, start) + open + close + value.slice(end);
-    setRange(v, start + open.length, start + open.length);
+  if (selText.length === 0) {
+    cmView.dispatch({
+      changes: { from: start, insert: open + close },
+      selection: { anchor: start + open.length },
+      userEvent: 'input.insert',
+    });
   } else {
-    const v = value.slice(0, start) + open + sel + close + value.slice(end);
-    setRange(v, start + open.length, start + open.length + sel.length);
+    cmView.dispatch({
+      changes: [
+        { from: start, insert: open },
+        { from: end,   insert: close },
+      ],
+      selection: { anchor: start + open.length, head: end + open.length },
+      userEvent: 'input.insert',
+    });
   }
 }
 
@@ -755,20 +935,28 @@ function lineBoundsAt(value, pos) {
 }
 
 function selectedLineRange() {
-  const { start, end, value } = getSel();
-  const a = lineBoundsAt(value, start).start;
-  const b = lineBoundsAt(value, end > start ? end - (value[end - 1] === '\n' ? 1 : 0) : end).end;
-  return { a, b, value };
+  const sel = cmView.state.selection.main;
+  const doc = cmView.state.doc;
+  const a = doc.lineAt(sel.from).from;
+  // If the selection ends exactly at a line break, fold back so the
+  // empty trailing line isn't included.
+  const endProbe = sel.to > sel.from && doc.sliceString(sel.to - 1, sel.to) === '\n'
+    ? sel.to - 1
+    : sel.to;
+  const b = doc.lineAt(endProbe).to;
+  return { a, b };
 }
 
 function rewriteLines(transform) {
-  const { a, b, value } = selectedLineRange();
-  const block = value.slice(a, b);
+  const { a, b } = selectedLineRange();
+  const block = cmView.state.doc.sliceString(a, b);
   const lines = block.split('\n');
-  const out = transform(lines);
-  const next = out.join('\n');
-  const newValue = value.slice(0, a) + next + value.slice(b);
-  setRange(newValue, a, a + next.length);
+  const next = transform(lines).join('\n');
+  cmView.dispatch({
+    changes: { from: a, to: b, insert: next },
+    selection: { anchor: a, head: a + next.length },
+    userEvent: 'input.replace',
+  });
 }
 
 /* ⌘H — clean level cycle. Always strips any "1.2." section number
@@ -1971,12 +2159,13 @@ function persistTabs() {
   } catch {}
 }
 
-// Snapshot the editor's live content into the active tab so a switch
-// preserves unsaved edits and the per-tab view (source / editor).
+// Snapshot the editor's live state into the active tab. With per-tab
+// EditorStates this is a reference assignment — no string copy, no
+// allocation regardless of doc size.
 function captureCurrentTab() {
   if (state.currentTabIndex < 0) return;
   const t = state.tabs[state.currentTabIndex];
-  t.content = state.mode === 'editor' ? htmlToMd(editor.innerHTML) : source.value;
+  t.cmState = cmView.state;
   t.dirty = state.dirty;
   t.baseline = state.baseline;
   t.path = state.filePath;
@@ -1989,19 +2178,17 @@ function loadTab(t) {
   state.baseline = t.baseline;
   state.dirty = t.dirty;
   app.dataset.dirty = t.dirty ? 'true' : 'false';
-  source.value = t.content;
   docTitle.textContent = t.name;
-  applyLargeDocClass();
 
-  const huge = isLargeDoc(source.value);
+  const targetMode = t.mode || state.mode;
 
-  // Force source mode for huge docs — the editor pane (markdown render
-  // + contenteditable) doesn't scale to multi-MB documents.
-  let targetMode = t.mode || state.mode;
-  if (huge) targetMode = 'source';
+  // Lazy upgrade for tabs persisted in the old `content` format.
+  if (!t.cmState) t.cmState = makeCMState(t.content);
 
-  highlightSource(); // no-op tokenization for huge docs
-  if (!huge) {
+  // Pure state swap — instant, no dispatch, no string allocation.
+  if (cmView.state !== t.cmState) cmView.setState(t.cmState);
+
+  if (targetMode === 'editor') {
     editor.innerHTML = mdToHtml(source.value);
     ensureTrailingParagraph();
   } else {
@@ -2009,15 +2196,8 @@ function loadTab(t) {
   }
 
   if (state.mode !== targetMode) {
-    if (targetMode === 'editor') {
-      source.hidden = true;
-      sourceHL.hidden = true;
-      editor.hidden = false;
-    } else {
-      editor.hidden = true;
-      source.hidden = false;
-      sourceHL.hidden = false;
-    }
+    if (targetMode === 'editor') { source.hidden = true;  editor.hidden = false; }
+    else                         { editor.hidden = true;  source.hidden = false; }
     state.mode = targetMode;
     app.dataset.mode = targetMode;
   }
@@ -2045,7 +2225,7 @@ function addTab(filePath, content) {
   const tab = {
     path: filePath || null,
     name: filePath ? basename(filePath) : 'untitled.md',
-    content: content || '',
+    cmState: makeCMState(content || ''),
     baseline: content || '',
     dirty: false,
     mode: state.mode,    // new tabs inherit the current view
@@ -2067,13 +2247,11 @@ function closeTab(i) {
     state.baseline = '';
     state.dirty = false;
     app.dataset.dirty = 'false';
-    source.value = '';
+    cmView.setState(makeCMState(''));
     docTitle.textContent = 'untitled.md';
     if (state.mode === 'editor') {
       editor.innerHTML = '';
       ensureTrailingParagraph();
-    } else {
-      highlightSource();
     }
     updateMeta();
     updateProgress();
@@ -2244,7 +2422,7 @@ async function restoreTabs() {
       state.tabs.push({
         path: f.path,
         name: basename(f.path),
-        content: f.content,
+        cmState: makeCMState(f.content),
         baseline: f.content,
         dirty: false,
         mode: spec.mode || 'source',
@@ -2374,7 +2552,7 @@ async function saveFile(forceDialog = false) {
     const t = state.tabs[state.currentTabIndex];
     t.path = result;
     t.name = basename(result);
-    t.content = source.value;
+    t.cmState = cmView.state;          // pin the post-save state
     t.baseline = source.value;
     t.dirty = false;
     renderSidebar();
@@ -2432,11 +2610,11 @@ function updateLineInfo() {
     if (!editorHintTimer) lineInfo.textContent = '';
     return;
   }
-  const pos = source.selectionStart;
-  const before = source.value.slice(0, pos);
-  const line = before.split('\n').length;
-  const col  = pos - (before.lastIndexOf('\n') + 1) + 1;
-  lineInfo.textContent = line + ':' + col;
+  // O(log N) line lookup via CodeMirror's line index — beats slicing
+  // and splitting the entire doc on every cursor move.
+  const head = cmView.state.selection.main.head;
+  const ln = cmView.state.doc.lineAt(head);
+  lineInfo.textContent = ln.number + ':' + (head - ln.from + 1);
 }
 
 ['keyup', 'click', 'input', 'mouseup', 'focus'].forEach((ev) => {
@@ -2444,11 +2622,18 @@ function updateLineInfo() {
 });
 document.addEventListener('selectionchange', updateLineInfo);
 
+// Coalesce progress updates with rAF — input/scroll fire many times per
+// frame; one layout-read per paint is enough.
+let progressRAF = 0;
 function updateProgress() {
-  const p = activePane();
-  const max = p.scrollHeight - p.clientHeight;
-  const ratio = max <= 0 ? 0 : Math.min(1, Math.max(0, p.scrollTop / max));
-  progressBar.style.width = (ratio * 100).toFixed(1) + '%';
+  if (progressRAF) return;
+  progressRAF = requestAnimationFrame(() => {
+    progressRAF = 0;
+    const p = activePane();
+    const max = p.scrollHeight - p.clientHeight;
+    const ratio = max <= 0 ? 0 : Math.min(1, Math.max(0, p.scrollTop / max));
+    progressBar.style.width = (ratio * 100).toFixed(1) + '%';
+  });
 }
 
 function markDirty() {
@@ -2457,7 +2642,10 @@ function markDirty() {
     app.dataset.dirty = 'true';
     if (state.currentTabIndex >= 0) {
       state.tabs[state.currentTabIndex].dirty = true;
-      renderSidebar();
+      // Targeted update — avoid rebuilding the whole sidebar DOM
+      // tree on every keystroke that flips the dirty flag.
+      const item = sidebarList.children[state.currentTabIndex];
+      if (item) item.classList.add('dirty');
     }
   }
 }
@@ -2497,8 +2685,8 @@ document.querySelector('.tools')?.addEventListener('click', (e) => {
 });
 
 source.addEventListener('input', () => {
-  highlightSource();
   markDirty(); updateMeta(); updateProgress();
+  if (state.mode === 'source' && findState && findState.open) scheduleFindRescan();
 });
 
 /* Tab in source — three behaviours:
@@ -2509,21 +2697,19 @@ source.addEventListener('input', () => {
 source.addEventListener('keydown', (e) => {
   if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
-  const start = source.selectionStart;
-  const end   = source.selectionEnd;
-  const value = source.value;
-
-  const startLineStart = value.lastIndexOf('\n', start - 1) + 1;
-  const endForBounds   = (end > start && value[end - 1] === '\n') ? end - 1 : end;
-  const endLineStart   = value.lastIndexOf('\n', endForBounds - 1) + 1;
-  const isMultiLine    = startLineStart !== endLineStart;
+  const doc = cmView.state.doc;
+  const sel = cmView.state.selection.main;
+  const start = sel.from, end = sel.to;
+  const startLine = doc.lineAt(start);
+  const endProbe = (end > start && doc.sliceString(end - 1, end) === '\n') ? end - 1 : end;
+  const endLine = doc.lineAt(endProbe);
+  const isMultiLine = startLine.from !== endLine.from;
 
   // 1) Multi-line selection — indent / outdent every covered line.
   if (isMultiLine) {
-    const a = startLineStart;
-    let b = value.indexOf('\n', endForBounds);
-    if (b === -1) b = value.length;
-    const lines = value.slice(a, b).split('\n');
+    const a = startLine.from;
+    const b = endLine.to;
+    const lines = doc.sliceString(a, b).split('\n');
     let firstDelta = 0, totalDelta = 0;
     const out = lines.map((l, i) => {
       let nl, d;
@@ -2540,32 +2726,43 @@ source.addEventListener('keydown', (e) => {
       totalDelta += d;
       return nl;
     });
-    const newBlock = out.join('\n');
-    setRange(value.slice(0, a) + newBlock + value.slice(b),
-             start + firstDelta, end + totalDelta);
+    cmView.dispatch({
+      changes: { from: a, to: b, insert: out.join('\n') },
+      selection: { anchor: start + firstDelta, head: end + totalDelta },
+      userEvent: 'input.replace',
+    });
     return;
   }
 
   // 2) Caret at start of line, no selection — indent/outdent the line.
-  if (start === end && start === startLineStart) {
-    const line = value.slice(startLineStart);
+  if (start === end && start === startLine.from) {
     if (e.shiftKey) {
-      const m = line.match(/^( {1,2}|\t)/);
+      const head = doc.sliceString(startLine.from, Math.min(startLine.from + 2, startLine.to));
+      const m = head.match(/^( {1,2}|\t)/);
       if (m) {
-        const r = m[0].length;
-        setRange(value.slice(0, startLineStart) + line.slice(r), start, end);
+        cmView.dispatch({
+          changes: { from: startLine.from, to: startLine.from + m[0].length, insert: '' },
+          selection: { anchor: start, head: end },
+          userEvent: 'delete.dedent',
+        });
       }
     } else {
-      setRange(value.slice(0, startLineStart) + '  ' + line, start + 2, end + 2);
+      cmView.dispatch({
+        changes: { from: startLine.from, insert: '  ' },
+        selection: { anchor: start + 2, head: end + 2 },
+        userEvent: 'input.indent',
+      });
     }
     return;
   }
 
   // 3) Mid-line / single-line selection — standard insert / no-op.
-  if (e.shiftKey) {
-    return;        // do nothing
-  }
-  setRange(value.slice(0, start) + '  ' + value.slice(end), start + 2, start + 2);
+  if (e.shiftKey) return;
+  cmView.dispatch({
+    changes: { from: start, to: end, insert: '  ' },
+    selection: { anchor: start + 2 },
+    userEvent: 'input.indent',
+  });
 });
 
 /* Enter in source: continue the previous line's marker (>, -, *, 1.).
@@ -2573,18 +2770,17 @@ source.addEventListener('keydown', (e) => {
  * Inside a fenced ``` block we don't intervene — Enter just adds \n. */
 source.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
-  const start = source.selectionStart;
-  const end   = source.selectionEnd;
-  const value = source.value;
+  const doc = cmView.state.doc;
+  const sel = cmView.state.selection.main;
+  const start = sel.from, end = sel.to;
 
-  if (findEnclosingFence(value, start, end)) return;
+  // Inside a fenced ``` block: let CodeMirror handle Enter normally.
+  // findEnclosingFence still walks the whole doc to pair fences — that's
+  // the only path that needs full content, and it's invoked once per Enter.
+  if (findEnclosingFence(doc.toString(), start, end)) return;
 
-  const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-  const lineEnd   = (() => {
-    const i = value.indexOf('\n', start);
-    return i === -1 ? value.length : i;
-  })();
-  const line = value.slice(lineStart, lineEnd);
+  const ln = doc.lineAt(start);
+  const line = ln.text;
 
   let prefix = null, markerLen = 0;
   let m;
@@ -2604,20 +2800,23 @@ source.addEventListener('keydown', (e) => {
   // Empty marker → escape: clear the marker and stop the list/quote.
   if (line.slice(markerLen).trim() === '' && start === end) {
     e.preventDefault();
-    setRange(value.slice(0, lineStart) + value.slice(lineEnd), lineStart, lineStart);
+    cmView.dispatch({
+      changes: { from: ln.from, to: ln.to, insert: '' },
+      selection: { anchor: ln.from },
+      userEvent: 'delete.list-escape',
+    });
     return;
   }
 
   e.preventDefault();
   const insert = '\n' + prefix;
-  setRange(value.slice(0, start) + insert + value.slice(end),
-           start + insert.length, start + insert.length);
+  cmView.dispatch({
+    changes: { from: start, to: end, insert },
+    selection: { anchor: start + insert.length },
+    userEvent: 'input.list-continue',
+  });
 });
-source.addEventListener('scroll', () => {
-  sourceHL.scrollTop  = source.scrollTop;
-  sourceHL.scrollLeft = source.scrollLeft;
-  updateProgress();
-});
+source.addEventListener('scroll', updateProgress);
 editor.addEventListener('input', () => {
   ensureTrailingParagraph();
   markDirty(); updateMeta(); updateProgress();
@@ -2913,7 +3112,6 @@ const findReplace  = document.getElementById('find-replace');
 const findCounter  = document.getElementById('find-counter');
 const findCaseBtn  = document.getElementById('find-case');
 const findWordBtn  = document.getElementById('find-word');
-const findHL       = document.getElementById('find-hl');
 
 const findState = {
   open: false,
@@ -2927,28 +3125,15 @@ const findState = {
 function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 // Resolve a character offset in source.value to its on-screen y inside
-// the textarea's scroll area (visual top of the rendered line, in scroll
-// content coordinates). Uses source-hl as a measuring proxy because it
-// shares font, padding, width and `pre-wrap` with the textarea.
+// the source pane's scroll area (visual top of the rendered line, in
+// scroll content coordinates). Uses CodeMirror's own measurement.
 function visualYOfSourceOffset(offset) {
-  const walker = document.createTreeWalker(sourceHL, NodeFilter.SHOW_TEXT);
-  let cum = 0;
-  let n;
-  while ((n = walker.nextNode())) {
-    const len = n.nodeValue.length;
-    if (cum + len >= offset) {
-      const r = document.createRange();
-      const local = offset - cum;
-      r.setStart(n, local);
-      r.setEnd(n, local);
-      const rect = r.getBoundingClientRect();
-      const hlRect = sourceHL.getBoundingClientRect();
-      if (rect.top === 0 && rect.bottom === 0) return null;
-      return rect.top - hlRect.top + sourceHL.scrollTop;
-    }
-    cum += len;
-  }
-  return null;
+  try {
+    const c = cmView.coordsAtPos(Math.max(0, Math.min(offset, cmView.state.doc.length)));
+    if (!c) return null;
+    const containerRect = cmView.scrollDOM.getBoundingClientRect();
+    return c.top - containerRect.top + cmView.scrollDOM.scrollTop;
+  } catch { return null; }
 }
 
 // Editor-mode highlights via CSS Custom Highlight API. Falls back to
@@ -3024,9 +3209,8 @@ function closeFind() {
   findState.open = false;
   findPanel.hidden = true;
   document.body.classList.remove('searching');
-  findHL.innerHTML = '';
-  findHL.hidden = true;
   clearEditorHighlights();
+  refreshFindDeco();
   (state.mode === 'editor' ? editor : source).focus();
 }
 
@@ -3065,44 +3249,22 @@ function computeMatches() {
 
 function renderFindHL() {
   if (state.mode === 'source') {
+    // Source-mode painting is handled by CodeMirror's @codemirror/search
+    // (see runFind dispatching setSearchQuery). Just clear any stale
+    // editor-mode highlights from a previous mode toggle.
     clearEditorHighlights();
-    if (findState.matches.length === 0 || isLargeDoc(source.value)) {
-      // Skip painting the overlay for huge docs — escapeHtml on the full
-      // text would block the renderer. Navigation (scroll to match) and
-      // counter still work. Visual highlight is sacrificed.
-      findHL.innerHTML = '';
-      findHL.hidden = true;
-      return;
-    }
-    findHL.hidden = false;
-    let html = '';
-    let pos = 0;
-    const text = source.value;
-    for (let i = 0; i < findState.matches.length; i++) {
-      const m = findState.matches[i];
-      html += escapeHtml(text.slice(pos, m.start));
-      const cls = i === findState.index ? ' class="current"' : '';
-      html += `<mark${cls}>${escapeHtml(text.slice(m.start, m.end))}</mark>`;
-      pos = m.end;
-    }
-    html += escapeHtml(text.slice(pos));
-    findHL.innerHTML = html;
-    findHL.scrollTop = source.scrollTop;
-    findHL.scrollLeft = source.scrollLeft;
-  } else {
-    // editor mode → use Highlight API; keep find-hl pre out of view
-    findHL.innerHTML = '';
-    findHL.hidden = true;
-    if (!editorMatchHL) return;     // API unsupported — nav still works
-    editorMatchHL.clear();
-    editorCurrentHL.clear();
-    for (let i = 0; i < findState.matches.length; i++) {
-      const m = findState.matches[i];
-      const r = rangeFromTextOffsets(editor, m.start, m.end);
-      if (!r) continue;
-      if (i === findState.index) editorCurrentHL.add(r);
-      else                       editorMatchHL.add(r);
-    }
+    return;
+  }
+  // editor mode → CSS Custom Highlight API
+  if (!editorMatchHL) return;     // API unsupported — nav still works
+  editorMatchHL.clear();
+  editorCurrentHL.clear();
+  for (let i = 0; i < findState.matches.length; i++) {
+    const m = findState.matches[i];
+    const r = rangeFromTextOffsets(editor, m.start, m.end);
+    if (!r) continue;
+    if (i === findState.index) editorCurrentHL.add(r);
+    else                       editorMatchHL.add(r);
   }
 }
 
@@ -3119,20 +3281,15 @@ function gotoMatch(i) {
   findState.index = i;
   const m = findState.matches[i];
   if (state.mode === 'source') {
-    // Place a zero-width caret at the match start so the textarea's
-    // selection rectangle (blue) doesn't cover our orange `mark.current`.
-    // Closing the find panel will then drop the user right at the match.
-    source.selectionStart = m.start;
-    source.selectionEnd   = m.start;
-    // Centre the match's *visual* line. Counting newlines is wrong for
-    // long lines that wrap, so locate the position via a Range inside
-    // source-hl (same content, same wrap as the textarea) and use its
-    // bounding rect to compute the real on-screen y.
-    const yInContent = visualYOfSourceOffset(m.start);
-    if (yInContent != null) {
-      const lineH = parseFloat(getComputedStyle(source).lineHeight) || 20;
-      source.scrollTop = Math.max(0, yInContent + lineH / 2 - source.clientHeight / 2);
-    }
+    // Place a zero-width caret at the match start (so the textarea-like
+    // selection rectangle doesn't sit on top of our orange `current`
+    // decoration), scroll the line into view, and refresh decorations
+    // so the new current match repaints.
+    cmView.dispatch({
+      selection: { anchor: m.start },
+      scrollIntoView: true,
+      annotations: findRefresh.of(Date.now()),
+    });
   } else {
     // Scroll the editor so the current match is visible without taking
     // focus away from the find input.
@@ -3152,6 +3309,7 @@ function gotoMatch(i) {
 function runFind() {
   computeMatches();
   updateCounter();
+  refreshFindDeco();
   if (findState.matches.length > 0) gotoMatch(findState.index);
   else renderFindHL();
 }
@@ -3170,10 +3328,12 @@ function replaceCurrent() {
   const m = findState.matches[findState.index];
   const repl = findReplace.value;
   if (state.mode === 'source') {
-    const before = source.value.slice(0, m.start);
-    const after  = source.value.slice(m.end);
-    source.value = before + repl + after;
-    source.dispatchEvent(new Event('input'));
+    // Single targeted change — no full-doc string allocation.
+    cmView.dispatch({
+      changes: { from: m.start, to: m.end, insert: repl },
+      selection: { anchor: m.start + repl.length },
+      userEvent: 'input.replace',
+    });
   } else {
     const r = rangeFromTextOffsets(editor, m.start, m.end);
     if (!r) return;
@@ -3198,13 +3358,12 @@ function replaceAll() {
   if (findState.matches.length === 0) return;
   const repl = findReplace.value;
   if (state.mode === 'source') {
-    let value = source.value;
-    for (let i = findState.matches.length - 1; i >= 0; i--) {
-      const m = findState.matches[i];
-      value = value.slice(0, m.start) + repl + value.slice(m.end);
-    }
-    source.value = value;
-    source.dispatchEvent(new Event('input'));
+    // One transaction with N disjoint changes — CodeMirror handles
+    // offset bookkeeping internally and no flat doc string is built.
+    cmView.dispatch({
+      changes: findState.matches.map((m) => ({ from: m.start, to: m.end, insert: repl })),
+      userEvent: 'input.replace',
+    });
   } else {
     // Walk in reverse so earlier ranges stay valid.
     for (let i = findState.matches.length - 1; i >= 0; i--) {
@@ -3221,7 +3380,10 @@ function replaceAll() {
   renderFindHL();
 }
 
-findInput.addEventListener('input', runFind);
+// Debounce regex-over-the-whole-doc so typing in the query stays
+// Search runs on Enter, not on every keystroke — much friendlier on
+// large documents where the regex would otherwise scan the whole text
+// after each char typed.
 findCaseBtn.addEventListener('click', () => {
   findState.matchCase = !findState.matchCase;
   findCaseBtn.classList.toggle('active', findState.matchCase);
@@ -3239,9 +3401,21 @@ document.getElementById('find-next').addEventListener('click', () => { nextMatch
 document.getElementById('find-close').addEventListener('click', closeFind);
 document.getElementById('find-replace-next').addEventListener('click', () => { replaceCurrent(); findInput.focus(); });
 document.getElementById('find-replace-all').addEventListener('click',  () => { replaceAll();     findInput.focus(); });
+document.getElementById('find-select-all').addEventListener('click',   () => {
+  // Multi-cursor at every match in source mode.
+  if (state.mode !== 'source' || findState.matches.length === 0) return;
+  const ranges = findState.matches.map((m) => EditorSelection.range(m.start, m.end));
+  cmView.dispatch({ selection: EditorSelection.create(ranges, 0) });
+  closeFind();
+});
 
 findInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? prevMatch() : nextMatch(); }
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  // First Enter (or Enter after editing the query) → run the search;
+  // subsequent Enter presses just navigate to next/prev match.
+  if (findInput.value !== findState.query) runFind();
+  else e.shiftKey ? prevMatch() : nextMatch();
 });
 findReplace.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); replaceCurrent(); }
@@ -3256,24 +3430,25 @@ window.addEventListener('keydown', (e) => {
   }
 }, { capture: true });
 
-// Keep highlight overlay scrolled in sync with the textarea.
-source.addEventListener('scroll', () => {
-  if (!findHL.hidden) {
-    findHL.scrollTop  = source.scrollTop;
-    findHL.scrollLeft = source.scrollLeft;
-  }
-});
-// Keep matches in sync with edits in either pane.
-source.addEventListener('input', () => {
-  if (findState.open && state.mode === 'source') { computeMatches(); updateCounter(); renderFindHL(); }
-});
-editor.addEventListener('input', () => {
-  if (findState.open && state.mode === 'editor') { computeMatches(); updateCounter(); renderFindHL(); }
-});
+// Keep matches in sync with edits in either pane. Coalesce per-frame
+// so each keystroke doesn't re-run the regex over the whole document.
+let findRescanRAF = 0;
+function scheduleFindRescan() {
+  if (!findState.open || findRescanRAF) return;
+  findRescanRAF = requestAnimationFrame(() => {
+    findRescanRAF = 0;
+    computeMatches();
+    updateCounter();
+    renderFindHL();
+    refreshFindDeco();
+  });
+}
+// Editor-mode rescan: the source input listener (declared earlier)
+// already handles source-mode rescans inline.
+editor.addEventListener('input', () => { if (state.mode === 'editor') scheduleFindRescan(); });
 
 source.value = '';
 state.baseline = source.value;
-highlightSource();
 updateMeta();
 updateProgress();
 

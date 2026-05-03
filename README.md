@@ -11,8 +11,9 @@
 - **Zero clutter.** No endless settings, no surprises. Just your text.
 - **Two views, one tap.** Switch from raw Markdown to a rendered view with `⌘M`. The same idea, two ways to look at it.
 - **Shortcuts where you expect them.** Bold, italic, lists, headers, tables, quotes, code… every gesture you already know, exactly where it should be.
+- **Handles big files.** Powered by [CodeMirror 6](https://codemirror.net/) under the hood — open multi-megabyte notes, dumps or logs without freezing. Each tab keeps an independent rope and undo history; switching is instant.
 - **Tabs and recents.** A thin left sidebar tracks every file you open. Drag to reorder, click to switch, `⌘W` to close. Resizable. Hidden when you have nothing open.
-- **Find and replace.** `⌘F` opens an inline find/replace panel — match case, whole word, navigation, and live highlighting in both source and rendered view.
+- **Find and replace.** `⌘F` opens an inline find/replace panel — match case, whole word, navigation, replace one or all, plus *Select* to drop a multi-cursor on every match.
 - **Multiple windows.** `⌘⇧N` opens a fresh window — useful for working on two documents side by side.
 - **Tables that actually work.** Create them, add rows or columns, delete — all from the keyboard. Tab walks cell by cell.
 - **Auto-numbered headers.** `⌘⇧H` numbers your sections automatically (1., 1.1, 1.1.1…). Perfect for technical docs, manuals, or reports.
@@ -54,16 +55,20 @@
 
 ## Technical overview
 
-`mini` is a desktop app built with [Electron](https://www.electronjs.org/), shipped for **macOS** (Apple Silicon and Intel) and **Windows x64**. The frontend is **vanilla JS** with zero runtime dependencies; all editor logic lives in `src/`.
+`mini` is a desktop app built with [Electron](https://www.electronjs.org/), shipped for **macOS** (Apple Silicon and Intel) and **Windows x64**. The renderer is plain ES modules, with [CodeMirror 6](https://codemirror.net/) for the source editor; the rest of the UI (sidebar, find panel, toolbar, theming) is hand-written, dependency-free.
 
 ### Project structure
 
 ```
 mini/
-├── main.js        Electron main process (window, menus, IPC, CLI)
-├── preload.js     Secure bridge between main and renderer
-├── src/           Editor UI (HTML, CSS, JS)
-└── theme/         User-customizable fonts and CSS
+├── main.js                     Electron main process (window, menus, IPC, CLI)
+├── preload.js                  Secure bridge between main and renderer
+├── src/
+│   ├── index.html
+│   ├── styles.css
+│   ├── renderer.js             Renderer source (ESM imports CodeMirror)
+│   └── renderer.bundle.js      Built bundle (gitignored, produced by esbuild)
+└── theme/                      User-customizable fonts and CSS
 ```
 
 ### Requirements
@@ -75,8 +80,11 @@ mini/
 
 ```bash
 npm install
-npm start
+npm start          # builds the renderer bundle, then launches Electron
+npm run watch      # rebuild on every save (in another terminal)
 ```
+
+`npm start` automatically runs `npm run build` (esbuild bundles `src/renderer.js` + CodeMirror into `src/renderer.bundle.js`).
 
 ### Packaging the app
 
@@ -145,7 +153,7 @@ Each theme exposes a palette of CSS variables under `:root`. Edit them and you'l
 }
 ```
 
-And the **highlight tokens** (headers, lists, quotes, code, emphasis, tables):
+And the **highlight tokens** (headers, lists, quotes, code, emphasis):
 
 ```css
 .hl-h  { color: #68ecec; }   /* # headers */
@@ -153,7 +161,6 @@ And the **highlight tokens** (headers, lists, quotes, code, emphasis, tables):
 .hl-q  { color: #f27d86; }   /* > quotes */
 .hl-c  { color: #9fe872; }   /* ` ``` code */
 .hl-em { color: #ca7def; }   /* **bold** *italic* */
-.hl-t  { color: #f9af6a; }   /* | tables | */
 ```
 
 **Find / replace match colors** (variables, work in both source and rendered view):

@@ -122,3 +122,6 @@ $RECYCLE.BIN/
 *.p12
 *.mobileprovision
 build/entitlements.mac.plist.bak
+# Renderer bundle (built by esbuild)
+src/renderer.bundle.js
+src/renderer.bundle.js.map

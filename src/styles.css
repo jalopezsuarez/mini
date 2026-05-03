@@ -181,38 +181,6 @@ body {
   tab-size: 2;
 }
 
-/* Source highlight overlay: a <pre> behind the textarea showing the
- * same text but tokenised. The textarea's text is rendered
- * transparent so only the overlay's coloured tokens are visible. */
-#source-hl {
-  pointer-events: none;
-  z-index: 0;
-  margin: 0;
-  overflow: hidden;
-  user-select: none;
-}
-textarea#source {
-  z-index: 1;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  caret-color: var(--caret, #c96442);
-  background: transparent;
-}
-/* For very large documents we skip the syntax-highlight overlay; let
- * the textarea paint its own text so the user can still read it. */
-body.huge-doc textarea#source {
-  color: var(--fg);
-  -webkit-text-fill-color: var(--fg);
-}
-body.huge-doc #source-hl,
-body.huge-doc #find-hl { display: none; }
-/* Selection: paint the text white on a solid blue rectangle so it
- * covers the highlight overlay underneath. */
-textarea#source::selection {
-  background: #3d86e0;
-  color: #ffffff;
-  -webkit-text-fill-color: #ffffff;
-}
 
 .toolbar {
   display: flex;
@@ -401,35 +369,6 @@ body[data-toolbar="collapsed"] .toolbar-fab { display: inline-flex; }
  *  Find / Replace
  * ============================================================ */
 
-/* Match overlay — sits ABOVE source-hl (which is opaque) and below the
- * textarea caret. Non-match text is transparent so the syntax-highlighted
- * tokens underneath remain visible; only matches paint a coloured rect
- * with their own foreground colour, replacing the token visual in that
- * span. Defaults common to all themes — see --find-* variables. */
-#find-hl {
-  pointer-events: none;
-  z-index: 1;
-  margin: 0;
-  overflow: hidden;
-  user-select: none;
-  background: transparent;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-}
-#find-hl[hidden] { display: none; }
-#find-hl mark,
-#find-hl mark.current { border-radius: 0; }
-#find-hl mark {
-  background: var(--find-bg, #ffff4c);
-  color: var(--find-fg, #000000);
-  -webkit-text-fill-color: var(--find-fg, #000000);
-}
-#find-hl mark.current {
-  background: var(--find-current-bg, #fd9845);
-  color: var(--find-current-fg, #000000);
-  -webkit-text-fill-color: var(--find-current-fg, #000000);
-}
-
 /* Editor mode highlights — CSS Custom Highlight API. */
 ::highlight(find-match) {
   background-color: var(--find-bg, #ffff4c);
@@ -438,6 +377,17 @@ body[data-toolbar="collapsed"] .toolbar-fab { display: inline-flex; }
 ::highlight(find-current) {
   background-color: var(--find-current-bg, #fd9845);
   color: var(--find-current-fg, #000000);
+}
+
+/* Source-mode highlights — driven by mini's own find module via a
+ * CodeMirror ViewPlugin (decorations, not @codemirror/search). */
+#source-host .mini-find-match {
+  background: var(--find-bg, #ffff4c);
+  color:      var(--find-fg, #000000);
+}
+#source-host .mini-find-current {
+  background: var(--find-current-bg, #fd9845);
+  color:      var(--find-current-fg, #000000);
 }
 
 /* Floating find panel — sits in the same corner as line-info. While
@@ -523,3 +473,42 @@ body.searching .line-info { display: none; }
 .find-btn:focus,
 .find-btn-icon:focus,
 .find-toggle:focus  { outline: 0; }
+
+/* ============================================================
+ *  CodeMirror 6 source pane
+ *  The legacy textarea/source-hl/find-hl trio was replaced by a
+ *  single CodeMirror EditorView mounted in #source-host. We force
+ *  CM to fill the pane and move .pane's padding inside CM's content
+ *  so the 780px column rule still applies.
+ * ============================================================ */
+#source-host { padding: 0; }
+#source-host .cm-editor {
+  height: 100%;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+#source-host .cm-editor.cm-focused { outline: none; }
+#source-host .cm-scroller {
+  font-family: inherit;
+  line-height: inherit;
+  overflow: auto;
+}
+#source-host .cm-content {
+  padding: 32px max(24px, calc((100% - 780px) / 2));
+  caret-color: var(--caret, #c96442);
+  font-family: inherit;
+}
+#source-host .cm-line { padding: 0; }
+#source-host .cm-cursor { border-left-color: var(--caret, #c96442); }
+#source-host ::selection { background: #3d86e0; color: #ffffff; }
+#source-host .cm-selectionBackground,
+#source-host .cm-focused .cm-selectionBackground { background: #3d86e0 !important; }
+
+/* Match CM's default scrollbar look to mini's. */
+#source-host .cm-scroller::-webkit-scrollbar { width: 8px; }
+#source-host .cm-scroller::-webkit-scrollbar-track { background: transparent; }
+#source-host .cm-scroller::-webkit-scrollbar-thumb {
+  background: var(--bg-3);
+  border-radius: 4px;
+}

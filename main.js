@@ -256,33 +256,8 @@ app.on('window-all-closed', () => {
 
 /* macOS forwards `mini somefile.md` (or a Finder open) as open-file events. */
 let pendingOpenPath = null;
-/* Hard cap on file size we'll load. The textarea-based renderer can't
- * lay out arbitrarily large text — Chromium's text shaper (skrifa)
- * eventually OOMs on very big documents. 32 MB is the upper bound we
- * accept; above 16 MB the renderer also drops syntax highlighting and
- * the find overlay (see LARGE_DOC in renderer.js). */
-const MAX_FILE_SIZE = 32 * 1024 * 1024;
 
-async function safeReadFile(filePath, parentWin) {
-  let stat;
-  try { stat = await fs.promises.stat(filePath); } catch (e) {
-    console.warn('stat failed', filePath, e);
-    return null;
-  }
-  if (stat.size > MAX_FILE_SIZE) {
-    const mb  = (stat.size / (1024 * 1024)).toFixed(1);
-    const max = (MAX_FILE_SIZE / (1024 * 1024)).toFixed(0);
-    try {
-      await dialog.showMessageBox(parentWin || mainWindow, {
-        type: 'warning',
-        title: 'File too large',
-        message: `${path.basename(filePath)} is ${mb} MB`,
-        detail: `mini won't open files larger than ${max} MB. The plain-text editor can't lay out documents that big without exhausting memory.`,
-        buttons: ['OK'],
-      });
-    } catch {}
-    return null;
-  }
+async function safeReadFile(filePath /*, parentWin */) {
   try {
     return await fs.promises.readFile(filePath, 'utf8');
   } catch (e) {

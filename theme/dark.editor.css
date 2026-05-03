@@ -1,0 +1,160 @@
+/* --------------------------------------------------------------
+ * mini — editor (preview) theme. Renders the parsed markdown.
+ *
+ * Plain CSS. Everything is auto-scoped to the editor pane at
+ * load time, so write selectors like `h1`, `code`, `blockquote`
+ * directly. Variables under :root apply only to this pane.
+ *
+ * Drop-in path inside the packaged app:
+ *   /Applications/mini.app/Contents/Resources/app/theme/theme.editor.css
+ *
+ * Custom fonts: just drop any .ttf / .otf / .woff / .woff2 into
+ * this same theme/ folder. mini auto-registers them at startup,
+ * using the filename (without extension) as the font-family.
+ *
+ * Example: copy `Inter.ttf` here, then write:
+ *
+ *   :root { --sans: 'Inter', system-ui, sans-serif; }
+ *
+ * Multiple weights? Drop e.g. `Inter-Regular.ttf` and
+ * `Inter-Bold.ttf` and reference them as `'Inter-Regular'` and
+ * `'Inter-Bold'`, or write your own @font-face block grouping
+ * them under one family name.
+ * -------------------------------------------------------------- */
+
+:root {
+  /* Claude dark palette */
+  --bg:         #1f1e1d;
+  --bg-soft:    #262624;
+  --bg-code:    #2a2826;
+  --fg:         #e7e5e2;
+  --fg-dim:     #8b8782;
+  --heading:    #fafaf9;
+  --accent:     #c96442;
+  --rule:       #3a3735;
+  --quote-bar:  #c96442;
+
+  /* Find / Replace match colors */
+  --find-bg:         #ffff4c;
+  --find-fg:         #000000;
+  --find-current-bg: #fd9845;
+  --find-current-fg: #000000;
+
+  --serif: 'copernicus', -apple-system, system-ui, sans-serif;
+  --sans:  'copernicus', -apple-system, system-ui, sans-serif;
+  --mono:  'sf-mono', ui-monospace, monospace;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+::selection { background: #3d86e0; color: #ffffff; }
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--heading);
+  font-family: var(--sans);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  margin: 1.6em 0 0.6em;
+}
+h1 { font-size: 2.0em;   border-bottom: 1px solid var(--rule); padding-bottom: .3em; }
+h2 { font-size: 1.55em;  }
+h3 { font-size: 1.25em;  }
+h4 { font-size: 1.08em;  }
+h5 { font-size: 0.98em;  color: var(--fg-dim); text-transform: uppercase; letter-spacing: .08em; }
+h6 { font-size: 0.88em;  color: var(--fg-dim); text-transform: uppercase; letter-spacing: .08em; }
+
+/* Paragraphs */
+p {
+  margin: 0 0 1em;
+}
+
+/* Inline emphasis */
+strong { color: var(--heading); font-weight: 600; }
+em     { color: var(--fg); font-style: italic; }
+
+/* Links */
+a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(201, 100, 66, .35);
+}
+a:hover { border-bottom-color: var(--accent); }
+
+/* Inline code */
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--bg-code);
+  color: #e9c8a3;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--rule);
+}
+
+/* Code blocks */
+pre {
+  background: var(--bg-soft);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 1.1em 0;
+  overflow-x: auto;
+  line-height: 1.55;
+}
+pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--fg);
+  font-size: 0.86em;
+}
+
+/* Blockquote */
+blockquote {
+  margin: 1.1em 0;
+  padding: 0.2em 0 0.2em 1em;
+  border-left: 3px solid var(--quote-bar);
+  color: var(--fg-dim);
+  font-style: italic;
+}
+blockquote p { margin: .35em 0; }
+
+/* Lists */
+ul, ol {
+  margin: 0.6em 0 1em;
+  padding-left: 1.4em;
+}
+li { margin: 0.18em 0; }
+ul li::marker { color: var(--accent); }
+ol li::marker { color: var(--fg-dim); }
+
+/* Horizontal rule */
+hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 2em 0;
+}
+
+/* Tables (markdown can produce these via raw html) */
+table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.95em;
+}
+th, td {
+  border: 1px solid var(--rule);
+  padding: 6px 10px;
+  text-align: left;
+}
+th { background: var(--bg-soft); color: var(--heading); }
+
+/* Caret colour while editing */
+* { caret-color: var(--accent); }
