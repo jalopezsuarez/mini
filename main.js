@@ -42,6 +42,16 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
+
+  // Reload is intentionally disabled. Block every known reload shortcut
+  // at the webContents level (menu item is also gone). To pick up code
+  // changes the user must close and reopen the app.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const k = (input.key || '').toLowerCase();
+    if (k === 'f5') return event.preventDefault();
+    if ((input.meta || input.control) && k === 'r') return event.preventDefault();
+  });
 }
 
 const macMenu = Menu.buildFromTemplate([
@@ -82,17 +92,26 @@ const macMenu = Menu.buildFromTemplate([
   {
     label: 'View',
     submenu: [
-      { role: 'togglefullscreen' },
+      { label: 'Toggle Fullscreen', role: 'togglefullscreen', accelerator: 'CmdOrCtrl+Shift+F' },
       { type: 'separator' },
-      { label: 'Increase Font', accelerator: 'Shift+CommandOrControl+Plus',
+      { label: 'Increase Font', accelerator: 'CmdOrCtrl+Shift+Plus',
         click: () => mainWindow && mainWindow.webContents.send('zoom', +0.1) },
-      { label: 'Decrease Font', accelerator: 'Shift+CommandOrControl+-',
+      { label: 'Decrease Font', accelerator: 'CmdOrCtrl+Shift+-',
         click: () => mainWindow && mainWindow.webContents.send('zoom', -0.1) },
     ],
   },
 ]);
 
 app.whenReady().then(() => {
+  app.setAboutPanelOptions({
+    applicationName: 'mini · Minimalist Markdown Editor',
+    applicationVersion: app.getVersion(),
+    copyright: 'Jose Antonio Lopez · https://github.com/jalopezsuarez/mini',
+    authors: ['Jose Antonio Lopez · https://github.com/jalopezsuarez/mini'],
+    credits: 'Jose Antonio Lopez · https://github.com/jalopezsuarez/mini',
+    website: 'https://github.com/jalopezsuarez/mini',
+  });
+
   const themeDir = path.join(__dirname, 'theme');
   protocol.handle('theme', (request) => {
     // theme:// is a standard scheme, so Chromium splits hostname / pathname:

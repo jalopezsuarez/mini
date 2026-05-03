@@ -234,11 +234,6 @@ textarea#source::selection {
   line-height: 1;
 }
 .tools .ico svg { display: block; }
-.tools .ico--quote {
-  font-size: 9.5px;
-  letter-spacing: -1px;
-  transform: translateY(-0.5px);
-}
 .tools .ico-sub {
   font-size: 0.7em;
   margin-left: 1px;

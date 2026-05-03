@@ -1147,6 +1147,7 @@ function cycleHeaderInEditor() {
   placeCaretInBlock(nb, newOffset);
   ensureTrailingParagraph();
   syncFromEditor();
+  flashEditorHint(`${MOD}H · Heading ${nb.tagName === 'P' ? '¶' : nb.tagName}`);
 }
 
 function cycleHeaderWithNumberInEditor() {
@@ -1171,6 +1172,7 @@ function cycleHeaderWithNumberInEditor() {
   placeCaretInBlock(nb, newOffset);
   ensureTrailingParagraph();
   syncFromEditor();
+  flashEditorHint(`${MOD}${SHIFT}H · ${nb.tagName === 'P' ? '¶' : nb.tagName}`);
 }
 
 /* ---------- table operations (editor mode) ---------- */
@@ -1813,27 +1815,6 @@ function runCommandThroughSource(cmd) {
   syncFromEditor();
 }
 
-function cycleHeaderInEditor() {
-  const sel = window.getSelection();
-  if (!sel.rangeCount) return;
-  let node = sel.anchorNode;
-  while (node && node.nodeType !== 1) node = node.parentNode;
-  while (node && node !== editor && !/^(P|H[1-6]|DIV|LI|BLOCKQUOTE)$/.test(node.tagName)) node = node.parentNode;
-  if (!node || node === editor) {
-    document.execCommand('formatBlock', false, 'h1');
-    return;
-  }
-  const t = node.tagName;
-  const next =
-    t === 'H1' ? 'h2' :
-    t === 'H2' ? 'h3' :
-    t === 'H3' ? 'h4' :
-    t === 'H4' ? 'h5' :
-    t === 'H5' ? 'h6' :
-    t === 'H6' ? 'p'  : 'h1';
-  document.execCommand('formatBlock', false, next);
-}
-
 function wrapInlineCodeInEditor() {
   const sel = window.getSelection();
   if (!sel.rangeCount) return;
@@ -1863,6 +1844,7 @@ function wrapInlineCodeInEditor() {
  * ============================================================ */
 
 function run(cmd) {
+  flashEditorHint(HINTS[cmd]);
   if (cmd === 'view') { setMode(state.mode === 'source' ? 'editor' : 'source'); return; }
   if (cmd === 'open') { openFile(); return; }
   if (cmd === 'save') { saveFile(); return; }
@@ -2044,10 +2026,44 @@ function activePane() {
 
 function updateMeta() { /* word/char counter removed */ }
 
-/* Current line:column indicator — source mode only. Hidden in editor. */
+/* Current line:column indicator — source mode only.
+ * In editor mode the same pill is reused as a transient "hint" surface
+ * (e.g. flashEditorHint('⌘H · H1') after a heading cycle). */
+const IS_MAC = /Mac/i.test(navigator.platform);
+const MOD    = IS_MAC ? '⌘' : 'Ctrl+';
+const SHIFT  = IS_MAC ? '⇧' : 'Shift+';
+
+const HINTS = {
+  bold:      `${MOD}B · Bold`,
+  italic:    `${MOD}I · Italic`,
+  underline: `${MOD}U · Underline`,
+  ul:        `${MOD}L · Bullet List`,
+  ol:        `${MOD}N · Numbered List`,
+  quote:     `${MOD}R · Quote`,
+  code:      `${MOD}F · Code`,
+  hr:        `${MOD}P · Rule`,
+  table:     `${MOD}T · Add Row`,
+  deleteRow: `${MOD}${SHIFT}T · Remove Row`,
+  addCol:    `${MOD}+ · Add Col`,
+  removeCol: `${MOD}− · Remove Col`,
+  fontUp:    `${MOD}${SHIFT}+ · Zoom In`,
+  fontDown:  `${MOD}${SHIFT}− · Zoom Out`,
+};
+
+let editorHintTimer = null;
+function flashEditorHint(text, ms = 1500) {
+  if (!text || state.mode !== 'editor') return;
+  lineInfo.textContent = text;
+  if (editorHintTimer) clearTimeout(editorHintTimer);
+  editorHintTimer = setTimeout(() => {
+    editorHintTimer = null;
+    if (state.mode === 'editor') lineInfo.textContent = '';
+  }, ms);
+}
+
 function updateLineInfo() {
   if (state.mode !== 'source') {
-    lineInfo.textContent = '';
+    if (!editorHintTimer) lineInfo.textContent = '';
     return;
   }
   const pos = source.selectionStart;
@@ -2265,9 +2281,10 @@ editor.addEventListener('keydown', (e) => {
   sel.addRange(r);
 });
 
-/* Tab in editor: list items → indent / outdent. Selection across blocks
- * → prepend / remove "  " on each covered block. Empty cursor → insert
- * "  " at cursor (or strip leading spaces of current line on Shift+Tab). */
+/* Tab in editor: tables → next/previous cell. List items → indent /
+ * outdent. Selection across blocks → prepend / remove "  " on each
+ * covered block. Empty cursor → insert "  " at cursor (or strip leading
+ * spaces of current line on Shift+Tab). */
 editor.addEventListener('keydown', (e) => {
   if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
@@ -2275,6 +2292,66 @@ editor.addEventListener('keydown', (e) => {
   const sel = window.getSelection();
   if (!sel.rangeCount || !editor.contains(sel.anchorNode)) return;
   const range = sel.getRangeAt(0);
+
+  // Inside a table cell → navigate left-to-right; wrap to next row at
+  // the end; on the last cell of the last row, append a fresh body row.
+  const cell = findCell(sel.anchorNode);
+  if (cell) {
+    const tr = cell.parentNode;
+    const cells = Array.from(tr.children);
+    const colIdx = cells.indexOf(cell);
+    const sectionSibling = (section, dir) =>
+      (section && /^(THEAD|TBODY|TFOOT)$/.test(section.tagName))
+        ? section[dir === 'next' ? 'nextElementSibling' : 'previousElementSibling']
+        : null;
+    let target = null;
+
+    if (e.shiftKey) {
+      if (colIdx > 0) {
+        target = cells[colIdx - 1];
+      } else {
+        let prevRow = tr.previousElementSibling;
+        if (!prevRow) {
+          const sec = sectionSibling(tr.parentNode, 'prev');
+          if (sec) prevRow = sec.lastElementChild;
+        }
+        if (prevRow) target = prevRow.children[prevRow.children.length - 1];
+      }
+    } else {
+      if (colIdx < cells.length - 1) {
+        target = cells[colIdx + 1];
+      } else {
+        let nextRow = tr.nextElementSibling;
+        if (!nextRow) {
+          const sec = sectionSibling(tr.parentNode, 'next');
+          if (sec) nextRow = sec.firstElementChild;
+        }
+        if (!nextRow) {
+          const table = findTable(cell);
+          if (table) {
+            let tbody = table.querySelector('tbody');
+            if (!tbody) {
+              tbody = document.createElement('tbody');
+              table.appendChild(tbody);
+            }
+            nextRow = document.createElement('tr');
+            for (let i = 0; i < cells.length; i++) nextRow.appendChild(newCell('td'));
+            tbody.appendChild(nextRow);
+            markDirty(); updateMeta();
+          }
+        }
+        if (nextRow) target = nextRow.children[0];
+      }
+    }
+
+    if (target) {
+      const r = document.createRange();
+      r.selectNodeContents(target);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    return;
+  }
 
   // Inside a list item → use indent / outdent.
   let li = sel.anchorNode;
@@ -2410,8 +2487,8 @@ window.addEventListener('keydown', (e) => {
     else if (k === 't')   cmd = 'deleteRow';
     else if (isPlus)      cmd = 'fontUp';
     else if (isMinus)     cmd = 'fontDown';
-  }
-  if (!cmd) {
+    else return;             // any other ⌘⇧… is reserved for menus / native
+  } else {
     cmd = ({
       m: 'view', h: 'header', b: 'bold', i: 'italic', u: 'underline',
       r: 'quote', f: 'code', l: 'ul', n: 'ol', t: 'table', p: 'hr',
@@ -2432,7 +2509,7 @@ window.mini.onMenu((action) => {
 });
 
 /* Files passed from the OS (mini archivo.md, Finder, drag-onto-dock). */
-window.mini.onZoom((delta) => adjustZoom(delta));
+window.mini.onZoom((delta) => run(delta > 0 ? 'fontUp' : 'fontDown'));
 
 window.mini.onOpenFileFromOS(({ path: p, content }) => {
   state.filePath = p;

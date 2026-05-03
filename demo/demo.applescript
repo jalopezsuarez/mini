@@ -1,4 +1,4 @@
--- Choreography for the 20s promo of `mini`.
+-- Choreography for the 20s demo of `mini`.
 -- Total budget: ~19s of action + 1s tail. Tweak `cps` to adjust typing speed.
 
 property cps : 0.05 -- seconds per character (0.05 = ~20 chars/s, fast but readable)

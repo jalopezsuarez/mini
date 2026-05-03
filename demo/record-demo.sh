@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Record a 20-second promo of `mini` automatically.
+# Record a 20-second demo of `mini` automatically.
 #
 # Requires:
 #   - macOS 11+ (for `screencapture -v -V`)
@@ -10,13 +10,13 @@
 #   - `mini` installed at /Applications/mini.app  *or*  the `mini` CLI shim
 #
 # Usage:
-#   ./record-promo.sh                 # writes promo.mov in cwd
-#   ./record-promo.sh out.mov         # custom output path
+#   ./record-demo.sh                 # writes demo.mov in cwd
+#   ./record-demo.sh out.mov         # custom output path
 
 set -euo pipefail
 
 DURATION=20
-OUT="${1:-promo.mov}"
+OUT="${1:-demo.mov}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPLESCRIPT="$SCRIPT_DIR/demo.applescript"
 
@@ -26,7 +26,7 @@ if [[ ! -f "$APPLESCRIPT" ]]; then
 fi
 
 # 1. Fresh empty markdown file so the demo always starts from zero.
-TMPFILE="$(mktemp -t mini-promo).md"
+TMPFILE="$(mktemp -t mini-demo).md"
 : > "$TMPFILE"
 trap 'rm -f "$TMPFILE"' EXIT
 
