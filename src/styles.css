@@ -128,7 +128,7 @@ textarea#source::selection {
   gap: 16px;
   padding: 0 14px;
   border-top: 1px solid var(--border);
-  background: var(--bg-2);
+  background: #191a1b;
   user-select: none;
   overflow: hidden;
 }
@@ -172,11 +172,9 @@ textarea#source::selection {
   bottom: 12px;
   z-index: 10;
   display: none;
-  background: rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: #191a1b;
 }
-.toolbar-fab:hover { color: var(--fg); background: rgba(0, 0, 0, 0.32); }
+.toolbar-fab:hover { color: var(--fg); background: #232425; }
 
 .toolbar-collapse svg,
 .toolbar-fab svg { display: block; }
@@ -218,9 +216,7 @@ textarea#source::selection {
   pointer-events: none;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: #191a1b;
 }
 .line-info:empty { display: none; }
 

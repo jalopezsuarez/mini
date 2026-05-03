@@ -40,8 +40,8 @@
 | Horizontal rule                | `⌘P`                |
 | Table (new or add row)         | `⌘T`                |
 | Delete row                     | `⌘⇧T`               |
-| Add / remove column            | `⌘+` / `⌘-`         |
-| Increase / decrease font size  | `⌘⇧+` / `⌘⇧-`       |
+| Add / remove column            | `⌘G` / `⌘⇧G`        |
+| Increase / decrease font size  | `⌘+` / `⌘-`         |
 | Open / Save / Save As          | `⌘O` / `⌘S` / `⌘⇧S` |
 
 ---

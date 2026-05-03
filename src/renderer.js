@@ -606,8 +606,11 @@ function plainToSourceCaret(plain, src) {
   return src.length;
 }
 
+const VIEW_MODE_KEY = 'mini.viewMode';
+
 function setMode(mode) {
   if (mode === state.mode) return;
+  try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
   if (mode === 'editor') {
     const plain = sourceCaretToPlain(source.selectionStart);
     editor.innerHTML = mdToHtml(source.value);
@@ -2044,14 +2047,14 @@ const HINTS = {
   hr:        `${MOD}P · Rule`,
   table:     `${MOD}T · Add Row`,
   deleteRow: `${MOD}${SHIFT}T · Remove Row`,
-  addCol:    `${MOD}+ · Add Col`,
-  removeCol: `${MOD}− · Remove Col`,
-  fontUp:    `${MOD}${SHIFT}+ · Zoom In`,
-  fontDown:  `${MOD}${SHIFT}− · Zoom Out`,
+  addCol:    `${MOD}G · Add Col`,
+  removeCol: `${MOD}${SHIFT}G · Remove Col`,
+  fontUp:    `${MOD}+ · Zoom In`,
+  fontDown:  `${MOD}− · Zoom Out`,
 };
 
 let editorHintTimer = null;
-function flashEditorHint(text, ms = 1500) {
+function flashEditorHint(text, ms = 2500) {
   if (!text || state.mode !== 'editor') return;
   lineInfo.textContent = text;
   if (editorHintTimer) clearTimeout(editorHintTimer);
@@ -2485,16 +2488,18 @@ window.addEventListener('keydown', (e) => {
   if (e.shiftKey) {
     if (k === 'h')        cmd = 'numberHeader';
     else if (k === 't')   cmd = 'deleteRow';
-    else if (isPlus)      cmd = 'fontUp';
-    else if (isMinus)     cmd = 'fontDown';
+    else if (k === 'g')   cmd = 'removeCol';
+    else if (isPlus)      cmd = 'fontUp';      // ⌘⇧+ also zooms in
+    else if (isMinus)     cmd = 'fontDown';    // ⌘⇧- also zooms out
     else return;             // any other ⌘⇧… is reserved for menus / native
   } else {
     cmd = ({
       m: 'view', h: 'header', b: 'bold', i: 'italic', u: 'underline',
       r: 'quote', f: 'code', l: 'ul', n: 'ol', t: 'table', p: 'hr',
+      g: 'addCol',
     })[k];
-    if (!cmd && isPlus)  cmd = 'addCol';
-    if (!cmd && isMinus) cmd = 'removeCol';
+    if (!cmd && isPlus)  cmd = 'fontUp';
+    if (!cmd && isMinus) cmd = 'fontDown';
   }
   if (!cmd) return;          // ⌘V, ⌘S, ⌘Z, ⌘C, etc. siguen siendo nativos
   e.preventDefault();
@@ -2533,3 +2538,8 @@ state.baseline = source.value;
 highlightSource();
 updateMeta();
 updateProgress();
+
+// Restore the last view mode (source / editor) from the previous run.
+try {
+  if (localStorage.getItem(VIEW_MODE_KEY) === 'editor') setMode('editor');
+} catch {}

@@ -94,9 +94,9 @@ const macMenu = Menu.buildFromTemplate([
     submenu: [
       { label: 'Toggle Fullscreen', role: 'togglefullscreen', accelerator: 'CmdOrCtrl+Shift+F' },
       { type: 'separator' },
-      { label: 'Increase Font', accelerator: 'CmdOrCtrl+Shift+Plus',
+      { label: 'Increase Font', accelerator: 'CmdOrCtrl+Plus',
         click: () => mainWindow && mainWindow.webContents.send('zoom', +0.1) },
-      { label: 'Decrease Font', accelerator: 'CmdOrCtrl+Shift+-',
+      { label: 'Decrease Font', accelerator: 'CmdOrCtrl+-',
         click: () => mainWindow && mainWindow.webContents.send('zoom', -0.1) },
     ],
   },
