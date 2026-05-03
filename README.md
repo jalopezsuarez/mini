@@ -8,10 +8,13 @@
 
 ## Why you'll like it
 
-- **Zero distractions.** No sidebars, no endless settings, no surprises. Just your text.
+- **Zero clutter.** No endless settings, no surprises. Just your text.
 - **Two views, one tap.** Switch from raw Markdown to a rendered view with `⌘M`. The same idea, two ways to look at it.
 - **Shortcuts where you expect them.** Bold, italic, lists, headers, tables, quotes, code… every gesture you already know, exactly where it should be.
-- **Tables that actually work.** Create them, add rows or columns, delete — all from the keyboard. No separate editor needed.
+- **Tabs and recents.** A thin left sidebar tracks every file you open. Drag to reorder, click to switch, `⌘W` to close. Resizable. Hidden when you have nothing open.
+- **Find and replace.** `⌘F` opens an inline find/replace panel — match case, whole word, navigation, and live highlighting in both source and rendered view.
+- **Multiple windows.** `⌘⇧N` opens a fresh window — useful for working on two documents side by side.
+- **Tables that actually work.** Create them, add rows or columns, delete — all from the keyboard. Tab walks cell by cell.
 - **Auto-numbered headers.** `⌘⇧H` numbers your sections automatically (1., 1.1, 1.1.1…). Perfect for technical docs, manuals, or reports.
 - **Your typography, your style.** Drop a font or a CSS file into the `theme/` folder and `mini` picks it up. No code required.
 - **Launch from the terminal.** Install the `mini` command with one click and open any file with `mini notes.md`.
@@ -32,17 +35,20 @@
 | Action                         | Shortcut            |
 | ------------------------------ | ------------------- |
 | Toggle view (source/render)    | `⌘M`                |
+| Find / replace                 | `⌘F`                |
 | Header (cycle levels)          | `⌘H`                |
 | Numbered header                | `⌘⇧H`               |
 | Bold / Italic / Underline      | `⌘B` / `⌘I` / `⌘U`  |
-| Bullet / Numbered list         | `⌘L` / `⌘N`         |
-| Quote / Code                   | `⌘R` / `⌘F`         |
+| Bullet / Numbered list         | `⌘L` / `⌘K`         |
+| Quote / Code                   | `⌘D` / `⌘R`         |
 | Horizontal rule                | `⌘P`                |
 | Table (new or add row)         | `⌘T`                |
 | Delete row                     | `⌘⇧T`               |
 | Add / remove column            | `⌘G` / `⌘⇧G`        |
 | Increase / decrease font size  | `⌘+` / `⌘-`         |
+| New tab / New window           | `⌘N` / `⌘⇧N`        |
 | Open / Save / Save As          | `⌘O` / `⌘S` / `⌘⇧S` |
+| Close tab                      | `⌘W`                |
 
 ---
 
@@ -139,14 +145,26 @@ Each theme exposes a palette of CSS variables under `:root`. Edit them and you'l
 }
 ```
 
-And the **highlight tokens** (headers, lists, quotes, code, emphasis):
+And the **highlight tokens** (headers, lists, quotes, code, emphasis, tables):
 
 ```css
 .hl-h  { color: #68ecec; }   /* # headers */
-.hl-l  { color: #9fe872; }   /* - * + lists */
+.hl-l  { color: #73b7fb; }   /* - * + 1. list markers */
 .hl-q  { color: #f27d86; }   /* > quotes */
-.hl-c  { color: #bc85f9; }   /* ` ``` code */
-.hl-em { color: #fee383; }   /* **bold** *italic* */
+.hl-c  { color: #9fe872; }   /* ` ``` code */
+.hl-em { color: #ca7def; }   /* **bold** *italic* */
+.hl-t  { color: #f9af6a; }   /* | tables | */
+```
+
+**Find / replace match colors** (variables, work in both source and rendered view):
+
+```css
+:root {
+  --find-bg:         #ffff4c;   /* all matches background */
+  --find-fg:         #000000;   /* all matches foreground */
+  --find-current-bg: #fd9845;   /* current match background */
+  --find-current-fg: #000000;   /* current match foreground */
+}
 ```
 
 **`theme.editor.css` — rendered view**

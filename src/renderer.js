@@ -17,6 +17,8 @@ const state = {
   mode: 'source',     // 'source' | 'editor'
   dirty: false,
   baseline: '',       // last saved/loaded content
+  tabs: [],           // [{ path, name, content, baseline, dirty }]
+  currentTabIndex: -1,
 };
 
 /* ============================================================
@@ -156,8 +158,8 @@ function adjustZoom(delta) {
   try {
     const t = await window.mini.getThemeCSS();
     $('theme-fonts').textContent      = autoFontFaces(t.fonts || []);
-    $('theme-source-css').textContent = t.source ? scopeCSS(t.source, '.pane.source') : '';
-    $('theme-editor-css').textContent = t.editor ? scopeCSS(t.editor, '.pane.editor') : '';
+    $('theme-source-css').textContent = t.source ? scopeCSS(t.source, '.pane.source', '.app[data-mode="source"]') : '';
+    $('theme-editor-css').textContent = t.editor ? scopeCSS(t.editor, '.pane.editor', '.app[data-mode="editor"]') : '';
   } catch (e) {
     console.warn('theme load failed', e);
   }
@@ -183,16 +185,20 @@ function autoFontFaces(files) {
 
 /* Naively prefix every top-level selector with a scope so the
  * theme files can use plain selectors like `h1`, `code`, `:root`. */
-function scopeCSS(css, scope) {
+function scopeCSS(css, scope, rootScope) {
   // Strip comments so we don't scope inside them.
   css = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  // `rootScope` is where `:root { ... }` blocks land. Defaults to `scope`,
+  // but pass a higher selector (e.g. `.app[data-mode="source"]`) when you
+  // want chrome outside the pane (titlebar, toolbar) to inherit theme vars.
+  const rs = rootScope || scope;
   return css.replace(/(^|\})\s*([^{}@][^{}]*?)\{/g, (m, brace, sel) => {
     const scoped = sel
       .split(',')
       .map(s => s.trim())
       .filter(Boolean)
       .map(s => {
-        if (s.startsWith(':root')) return scope + s.slice(5);
+        if (s.startsWith(':root')) return rs + s.slice(5);
         if (s.startsWith('html') || s.startsWith('body')) return scope;
         return scope + ' ' + s;
       })
@@ -220,21 +226,49 @@ function highlightInline(escaped) {
     codes.push(c);
     return `\x02${codes.length - 1}\x02`;
   });
-  // Bold (** or __) — wrap whole match incl. markers
-  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<span class="hl-em">**$1**</span>');
-  s = s.replace(/__([^_\n]+)__/g,     '<span class="hl-em">__$1__</span>');
-  // Italic (* or _ standalone)
+
+  // Bold first; stash the rendered span so the italic regexes below can
+  // never see the inner `**` / `__` and accidentally re-match a single-* / _.
+  const bolds = [];
+  const stashBold = (open, close, content) => {
+    bolds.push(`<span class="hl-em">${open}${content}${close}</span>`);
+    return `\x03${bolds.length - 1}\x03`;
+  };
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, (_, c) => stashBold('**', '**', c));
+  s = s.replace(/__([^_\n]+)__/g,     (_, c) => stashBold('__', '__', c));
+
+  // Italic (* or _ standalone) — bolds are already replaced by placeholders.
   s = s.replace(/\*([^*\n]+)\*/g, '<span class="hl-em">*$1*</span>');
   s = s.replace(/(^|[^a-zA-Z0-9])_([^_\n]+)_(?=[^a-zA-Z0-9]|$)/g, '$1<span class="hl-em">_$2_</span>');
+
   // Underline <u>…</u> — already escaped to &lt;u&gt;…&lt;/u&gt;
   s = s.replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/g, '<span class="hl-em">&lt;u&gt;$1&lt;/u&gt;</span>');
-  // Re-inject code spans, marker only
+
+  // Re-inject bold spans, then code spans.
+  s = s.replace(/\x03(\d+)\x03/g, (_, i) => bolds[+i]);
   s = s.replace(/\x02(\d+)\x02/g, (_, i) =>
     `<span class="hl-c">\`</span>${codes[+i]}<span class="hl-c">\`</span>`);
   return s;
 }
 
+// Anything bigger than this skips syntax highlighting, the editor-pane
+// rebuild and the find overlay. The textarea itself can hold the text;
+// what kills the UI is iterating it on every keystroke.
+const LARGE_DOC = 16 * 1024 * 1024;   // 16 MB
+function isLargeDoc(text) { return (text || '').length > LARGE_DOC; }
+
+function applyLargeDocClass() {
+  document.body.classList.toggle('huge-doc', isLargeDoc(source.value));
+}
+
 function highlightSource() {
+  applyLargeDocClass();
+  if (isLargeDoc(source.value)) {
+    // Skip tokenization for huge docs — body.huge-doc switches the
+    // textarea text to be visible directly so the user still sees it.
+    sourceHL.textContent = '';
+    return;
+  }
   const lines = source.value.split('\n');
   let inFence = false;
   const out = lines.map((line) => {
@@ -242,17 +276,22 @@ function highlightSource() {
       inFence = !inFence;
       return `<span class="hl-c">${escapeHtml(line)}</span>`;
     }
-    if (inFence) return escapeHtml(line);
+    // Inside a fenced block → whole line in code colour.
+    if (inFence) return `<span class="hl-c">${escapeHtml(line)}</span>`;
 
     // Header — colour the entire line
     if (/^#{1,6}(\s|$)/.test(line)) {
       return `<span class="hl-h">${escapeHtml(line)}</span>`;
     }
-    // Blockquote marker
-    let m = line.match(/^(>\s?)(.*)$/);
-    if (m) {
-      return `<span class="hl-q">${escapeHtml(m[1])}</span>${highlightInline(escapeHtml(m[2]))}`;
+    // Blockquote — colour the entire line
+    if (/^>\s?/.test(line)) {
+      return `<span class="hl-q">${escapeHtml(line)}</span>`;
     }
+    // Table row (separator or content) → entire line in table colour.
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      return `<span class="hl-t">${escapeHtml(line)}</span>`;
+    }
+    let m;
     // Bullet list marker
     m = line.match(/^(\s*)([-*]\s)(.*)$/);
     if (m) {
@@ -610,6 +649,9 @@ const VIEW_MODE_KEY = 'mini.viewMode';
 
 function setMode(mode) {
   if (mode === state.mode) return;
+  // The editor pane uses mdToHtml + contenteditable, which doesn't scale
+  // to multi-MB documents. Stay in source mode silently for huge docs.
+  if (mode === 'editor' && isLargeDoc(source.value)) return;
   try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
   if (mode === 'editor') {
     const plain = sourceCaretToPlain(source.selectionStart);
@@ -645,6 +687,16 @@ function setMode(mode) {
   }
   updateProgress();
   updateLineInfo();
+  if (state.currentTabIndex >= 0) {
+    state.tabs[state.currentTabIndex].mode = state.mode;
+    persistTabs();
+  }
+  if (typeof findState !== 'undefined' && findState.open) {
+    findState.index = -1;
+    computeMatches();
+    updateCounter();
+    renderFindHL();
+  }
 }
 
 /* ============================================================
@@ -1847,6 +1899,7 @@ function wrapInlineCodeInEditor() {
  * ============================================================ */
 
 function run(cmd) {
+  if (cmd === 'find') { openFind(); return; }
   flashEditorHint(HINTS[cmd]);
   if (cmd === 'view') { setMode(state.mode === 'source' ? 'editor' : 'source'); return; }
   if (cmd === 'open') { openFile(); return; }
@@ -1898,26 +1951,322 @@ function run(cmd) {
 }
 
 /* ============================================================
+ * Tabs (sidebar) — open files / recents
+ * ============================================================ */
+
+const TABS_KEY = 'mini.openTabs';
+const sidebarEl = document.getElementById('sidebar');
+const sidebarList = document.getElementById('sidebar-list');
+
+function basename(p) { return (p || '').split(/[/\\]/).pop(); }
+
+function persistTabs() {
+  try {
+    const tabs = state.tabs
+      .filter(t => t.path)
+      .map(t => ({ path: t.path, mode: t.mode || 'source' }));
+    const activePath = state.currentTabIndex >= 0
+      ? state.tabs[state.currentTabIndex].path : null;
+    localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, activePath }));
+  } catch {}
+}
+
+// Snapshot the editor's live content into the active tab so a switch
+// preserves unsaved edits and the per-tab view (source / editor).
+function captureCurrentTab() {
+  if (state.currentTabIndex < 0) return;
+  const t = state.tabs[state.currentTabIndex];
+  t.content = state.mode === 'editor' ? htmlToMd(editor.innerHTML) : source.value;
+  t.dirty = state.dirty;
+  t.baseline = state.baseline;
+  t.path = state.filePath;
+  t.name = state.filePath ? basename(state.filePath) : 'untitled.md';
+  t.mode = state.mode;
+}
+
+function loadTab(t) {
+  state.filePath = t.path;
+  state.baseline = t.baseline;
+  state.dirty = t.dirty;
+  app.dataset.dirty = t.dirty ? 'true' : 'false';
+  source.value = t.content;
+  docTitle.textContent = t.name;
+  applyLargeDocClass();
+
+  const huge = isLargeDoc(source.value);
+
+  // Force source mode for huge docs — the editor pane (markdown render
+  // + contenteditable) doesn't scale to multi-MB documents.
+  let targetMode = t.mode || state.mode;
+  if (huge) targetMode = 'source';
+
+  highlightSource(); // no-op tokenization for huge docs
+  if (!huge) {
+    editor.innerHTML = mdToHtml(source.value);
+    ensureTrailingParagraph();
+  } else {
+    editor.innerHTML = '';
+  }
+
+  if (state.mode !== targetMode) {
+    if (targetMode === 'editor') {
+      source.hidden = true;
+      sourceHL.hidden = true;
+      editor.hidden = false;
+    } else {
+      editor.hidden = true;
+      source.hidden = false;
+      sourceHL.hidden = false;
+    }
+    state.mode = targetMode;
+    app.dataset.mode = targetMode;
+  }
+
+  updateMeta();
+  updateProgress();
+}
+
+function switchToTab(i) {
+  if (i < 0 || i >= state.tabs.length) return;
+  if (i === state.currentTabIndex) return;
+  captureCurrentTab();
+  state.currentTabIndex = i;
+  loadTab(state.tabs[i]);
+  renderSidebar();
+  persistTabs();
+}
+
+function addTab(filePath, content) {
+  if (filePath) {
+    const existing = state.tabs.findIndex(t => t.path === filePath);
+    if (existing >= 0) { switchToTab(existing); return existing; }
+  }
+  captureCurrentTab();
+  const tab = {
+    path: filePath || null,
+    name: filePath ? basename(filePath) : 'untitled.md',
+    content: content || '',
+    baseline: content || '',
+    dirty: false,
+    mode: state.mode,    // new tabs inherit the current view
+  };
+  state.tabs.push(tab);
+  state.currentTabIndex = state.tabs.length - 1;
+  loadTab(tab);
+  renderSidebar();
+  persistTabs();
+  return state.currentTabIndex;
+}
+
+function closeTab(i) {
+  if (i < 0 || i >= state.tabs.length) return;
+  state.tabs.splice(i, 1);
+  if (state.tabs.length === 0) {
+    state.currentTabIndex = -1;
+    state.filePath = null;
+    state.baseline = '';
+    state.dirty = false;
+    app.dataset.dirty = 'false';
+    source.value = '';
+    docTitle.textContent = 'untitled.md';
+    if (state.mode === 'editor') {
+      editor.innerHTML = '';
+      ensureTrailingParagraph();
+    } else {
+      highlightSource();
+    }
+    updateMeta();
+    updateProgress();
+  } else if (state.currentTabIndex === i) {
+    const next = Math.min(i, state.tabs.length - 1);
+    state.currentTabIndex = next;
+    loadTab(state.tabs[next]);
+  } else if (state.currentTabIndex > i) {
+    state.currentTabIndex--;
+  }
+  renderSidebar();
+  persistTabs();
+}
+
+function newTab() { return addTab(null, ''); }
+
+// User pressed ⌘W: close active tab. With no tabs left and no current,
+// fall back to closing the window.
+function closeAction() {
+  if (state.currentTabIndex >= 0) {
+    closeTab(state.currentTabIndex);
+  } else {
+    window.mini.closeWindow();
+  }
+}
+
+function renderSidebar() {
+  sidebarList.innerHTML = '';
+  for (let i = 0; i < state.tabs.length; i++) {
+    const t = state.tabs[i];
+    const li = document.createElement('li');
+    li.className = 'tab-item' +
+      (i === state.currentTabIndex ? ' active' : '') +
+      (t.dirty ? ' dirty' : '');
+    li.draggable = true;
+    li.dataset.idx = String(i);
+
+    const name = document.createElement('span');
+    name.className = 'tab-name';
+    name.textContent = t.name;
+    name.title = t.path || t.name;
+    li.addEventListener('click', () => switchToTab(i));
+    li.appendChild(name);
+
+    const close = document.createElement('button');
+    close.className = 'tab-close';
+    close.type = 'button';
+    close.textContent = '×';
+    close.title = 'Close';
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeTab(i);
+    });
+    li.appendChild(close);
+
+    attachTabDnD(li, i);
+    sidebarList.appendChild(li);
+  }
+  sidebarEl.hidden = state.tabs.length === 0;
+}
+
+/* ---------- Drag-and-drop reorder ---------- */
+
+function clearDragMarkers() {
+  sidebarList
+    .querySelectorAll('.drag-over-top, .drag-over-bottom')
+    .forEach((el) => el.classList.remove('drag-over-top', 'drag-over-bottom'));
+}
+
+function attachTabDnD(li, index) {
+  li.addEventListener('dragstart', (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+    li.classList.add('dragging');
+  });
+  li.addEventListener('dragend', () => {
+    li.classList.remove('dragging');
+    clearDragMarkers();
+  });
+  li.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = li.getBoundingClientRect();
+    const upper = e.clientY < rect.top + rect.height / 2;
+    clearDragMarkers();
+    li.classList.add(upper ? 'drag-over-top' : 'drag-over-bottom');
+  });
+  li.addEventListener('dragleave', (e) => {
+    // only clear if leaving for an unrelated target
+    if (e.relatedTarget && li.contains(e.relatedTarget)) return;
+    li.classList.remove('drag-over-top', 'drag-over-bottom');
+  });
+  li.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+    if (Number.isNaN(fromIdx)) return;
+    const rect = li.getBoundingClientRect();
+    const upper = e.clientY < rect.top + rect.height / 2;
+    const toIdx = upper ? index : index + 1;
+    moveTab(fromIdx, toIdx);
+  });
+}
+
+function moveTab(from, to) {
+  if (from < 0 || from >= state.tabs.length) return;
+  let target = to;
+  if (target > from) target--;        // splice shifts indices left
+  if (target === from) return;        // no-op
+  const activeRef = state.currentTabIndex >= 0 ? state.tabs[state.currentTabIndex] : null;
+  const [t] = state.tabs.splice(from, 1);
+  state.tabs.splice(target, 0, t);
+  if (activeRef) state.currentTabIndex = state.tabs.indexOf(activeRef);
+  renderSidebar();
+  persistTabs();
+}
+
+/* ---------- Sidebar resize ---------- */
+
+const sidebarResizer = document.getElementById('sidebar-resizer');
+const SIDEBAR_WIDTH_KEY = 'mini.sidebarWidth';
+const SIDEBAR_MIN = 120;
+const SIDEBAR_MAX = 480;
+const SIDEBAR_DEFAULT = 200;
+
+function applySidebarWidth(px) {
+  const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Math.round(px)));
+  sidebarEl.style.flex = `0 0 ${w}px`;
+  return w;
+}
+
+(function initSidebarWidth() {
+  const stored = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY), 10);
+  applySidebarWidth(Number.isFinite(stored) ? stored : SIDEBAR_DEFAULT);
+})();
+
+let sidebarResizing = false;
+sidebarResizer.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  sidebarResizing = true;
+  document.body.classList.add('sidebar-resizing');
+  sidebarResizer.classList.add('resizing');
+});
+document.addEventListener('mousemove', (e) => {
+  if (!sidebarResizing) return;
+  applySidebarWidth(e.clientX);
+});
+document.addEventListener('mouseup', () => {
+  if (!sidebarResizing) return;
+  sidebarResizing = false;
+  document.body.classList.remove('sidebar-resizing');
+  sidebarResizer.classList.remove('resizing');
+  const w = sidebarEl.getBoundingClientRect().width;
+  try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(w))); } catch {}
+});
+
+async function restoreTabs() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TABS_KEY) || 'null');
+    if (!stored) return;
+    // Back-compat: older sessions stored just `paths`.
+    const list = stored.tabs || (stored.paths || []).map(p => ({ path: p }));
+    const activePath = stored.activePath || null;
+    let activeIdx = -1;
+    for (const spec of list) {
+      const f = await window.mini.readFile(spec.path);
+      if (!f) continue;
+      state.tabs.push({
+        path: f.path,
+        name: basename(f.path),
+        content: f.content,
+        baseline: f.content,
+        dirty: false,
+        mode: spec.mode || 'source',
+      });
+      if (f.path === activePath) activeIdx = state.tabs.length - 1;
+    }
+    if (state.tabs.length > 0) {
+      const idx = activeIdx >= 0 ? activeIdx : 0;
+      state.currentTabIndex = idx;
+      loadTab(state.tabs[idx]);
+    }
+    renderSidebar();
+  } catch {}
+}
+
+/* ============================================================
  * Files
  * ============================================================ */
 
 async function openFile() {
   const f = await window.mini.openFile();
   if (!f) return;
-  state.filePath = f.path;
-  source.value = f.content;
-  state.baseline = f.content;
-  state.dirty = false;
-  app.dataset.dirty = 'false';
-  docTitle.textContent = f.path.split('/').pop();
-  if (state.mode === 'editor') {
-    editor.innerHTML = mdToHtml(source.value);
-    ensureTrailingParagraph();
-  } else {
-    highlightSource();
-  }
-  updateMeta();
-  updateProgress();
+  addTab(f.path, f.content);
 }
 
 /* ============================================================
@@ -2016,7 +2365,20 @@ async function saveFile(forceDialog = false) {
   state.baseline = source.value;
   state.dirty = false;
   app.dataset.dirty = 'false';
-  docTitle.textContent = result.split('/').pop();
+  docTitle.textContent = basename(result);
+
+  if (state.currentTabIndex < 0) {
+    addTab(result, source.value);
+  } else {
+    const t = state.tabs[state.currentTabIndex];
+    t.path = result;
+    t.name = basename(result);
+    t.content = source.value;
+    t.baseline = source.value;
+    t.dirty = false;
+    renderSidebar();
+    persistTabs();
+  }
 }
 
 /* ============================================================
@@ -2041,9 +2403,9 @@ const HINTS = {
   italic:    `${MOD}I · Italic`,
   underline: `${MOD}U · Underline`,
   ul:        `${MOD}L · Bullet List`,
-  ol:        `${MOD}N · Numbered List`,
-  quote:     `${MOD}R · Quote`,
-  code:      `${MOD}F · Code`,
+  ol:        `${MOD}K · Numbered List`,
+  quote:     `${MOD}D · Quote`,
+  code:      `${MOD}R · Code`,
   hr:        `${MOD}P · Rule`,
   table:     `${MOD}T · Add Row`,
   deleteRow: `${MOD}${SHIFT}T · Remove Row`,
@@ -2092,6 +2454,10 @@ function markDirty() {
   if (!state.dirty) {
     state.dirty = true;
     app.dataset.dirty = 'true';
+    if (state.currentTabIndex >= 0) {
+      state.tabs[state.currentTabIndex].dirty = true;
+      renderSidebar();
+    }
   }
 }
 
@@ -2110,15 +2476,24 @@ const collapseBtn = document.getElementById('toolbar-collapse');
 const fabBtn      = document.getElementById('toolbar-fab');
 const TOOLBAR_KEY = 'mini.toolbarCollapsed';
 const setCollapsed = (v) => {
-  if (v) app.setAttribute('data-toolbar', 'collapsed');
-  else   app.removeAttribute('data-toolbar');
+  if (v) document.body.setAttribute('data-toolbar', 'collapsed');
+  else   document.body.removeAttribute('data-toolbar');
   try { localStorage.setItem(TOOLBAR_KEY, v ? '1' : '0'); } catch {}
 };
 setCollapsed(localStorage.getItem(TOOLBAR_KEY) === '1');
 collapseBtn.addEventListener('click', () => setCollapsed(true));
 fabBtn.addEventListener('click', () => setCollapsed(false));
 
-/* Tool labels are display-only — interactivity disabled by CSS. */
+/* Toolbar buttons: delegate click to run() based on data-cmd. */
+document.querySelector('.tools')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.tool-btn[data-cmd]');
+  if (!btn) return;
+  e.preventDefault();
+  // Keep keyboard focus on the editor pane after clicking — otherwise
+  // commands like ⌘B would no-op because focus is on the toolbar button.
+  (state.mode === 'editor' ? editor : source).focus();
+  run(btn.dataset.cmd);
+});
 
 source.addEventListener('input', () => {
   highlightSource();
@@ -2481,6 +2856,11 @@ editor.addEventListener('keydown', (e) => {
 window.addEventListener('keydown', (e) => {
   if (!(e.metaKey || e.ctrlKey)) return;
   const k = e.key.toLowerCase();
+  // While typing in the find panel only ⌘F (re-focus) is meaningful;
+  // every other editor command is suppressed so it doesn't corrupt the
+  // document while the user is searching.
+  const inFind = findPanel && findPanel.contains(document.activeElement);
+  if (inFind && k !== 'f') return;
 
   const isPlus  = e.code === 'Equal' || k === '=' || k === '+';
   const isMinus = e.code === 'Minus' || k === '-' || k === '_';
@@ -2495,7 +2875,7 @@ window.addEventListener('keydown', (e) => {
   } else {
     cmd = ({
       m: 'view', h: 'header', b: 'bold', i: 'italic', u: 'underline',
-      r: 'quote', f: 'code', l: 'ul', n: 'ol', t: 'table', p: 'hr',
+      f: 'find', d: 'quote', r: 'code', l: 'ul', k: 'ol', t: 'table', p: 'hr',
       g: 'addCol',
     })[k];
     if (!cmd && isPlus)  cmd = 'fontUp';
@@ -2508,29 +2888,386 @@ window.addEventListener('keydown', (e) => {
 }, { capture: true });
 
 window.mini.onMenu((action) => {
+  if (action === 'new')    newTab();
   if (action === 'open')   openFile();
   if (action === 'save')   saveFile(false);
   if (action === 'saveAs') saveFile(true);
+  if (action === 'close')  closeAction();
 });
 
 /* Files passed from the OS (mini archivo.md, Finder, drag-onto-dock). */
 window.mini.onZoom((delta) => run(delta > 0 ? 'fontUp' : 'fontDown'));
 
 window.mini.onOpenFileFromOS(({ path: p, content }) => {
-  state.filePath = p;
-  source.value = content;
-  state.baseline = content;
-  state.dirty = false;
-  app.dataset.dirty = 'false';
-  docTitle.textContent = p.split('/').pop();
-  if (state.mode === 'editor') {
-    editor.innerHTML = mdToHtml(source.value);
-    ensureTrailingParagraph();
-  } else {
-    highlightSource();
+  addTab(p, content);
+});
+
+/* ============================================================
+ * Find / Replace
+ * ============================================================ */
+
+const findPanel    = document.getElementById('find-panel');
+const findInput    = document.getElementById('find-input');
+const findReplace  = document.getElementById('find-replace');
+const findCounter  = document.getElementById('find-counter');
+const findCaseBtn  = document.getElementById('find-case');
+const findWordBtn  = document.getElementById('find-word');
+const findHL       = document.getElementById('find-hl');
+
+const findState = {
+  open: false,
+  query: '',
+  matchCase: false,
+  wholeWord: false,
+  matches: [],
+  index: -1,
+};
+
+function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// Resolve a character offset in source.value to its on-screen y inside
+// the textarea's scroll area (visual top of the rendered line, in scroll
+// content coordinates). Uses source-hl as a measuring proxy because it
+// shares font, padding, width and `pre-wrap` with the textarea.
+function visualYOfSourceOffset(offset) {
+  const walker = document.createTreeWalker(sourceHL, NodeFilter.SHOW_TEXT);
+  let cum = 0;
+  let n;
+  while ((n = walker.nextNode())) {
+    const len = n.nodeValue.length;
+    if (cum + len >= offset) {
+      const r = document.createRange();
+      const local = offset - cum;
+      r.setStart(n, local);
+      r.setEnd(n, local);
+      const rect = r.getBoundingClientRect();
+      const hlRect = sourceHL.getBoundingClientRect();
+      if (rect.top === 0 && rect.bottom === 0) return null;
+      return rect.top - hlRect.top + sourceHL.scrollTop;
+    }
+    cum += len;
   }
-  updateMeta();
-  updateProgress();
+  return null;
+}
+
+// Editor-mode highlights via CSS Custom Highlight API. Falls back to
+// "no visual highlight" if the runtime lacks support — navigation and
+// replace still work.
+let editorMatchHL = null;
+let editorCurrentHL = null;
+if (typeof Highlight !== 'undefined' && typeof CSS !== 'undefined' && CSS.highlights) {
+  editorMatchHL   = new Highlight();
+  editorCurrentHL = new Highlight();
+  CSS.highlights.set('find-match',   editorMatchHL);
+  CSS.highlights.set('find-current', editorCurrentHL);
+}
+
+function searchedText() {
+  return state.mode === 'editor' ? editor.textContent : source.value;
+}
+
+function currentCaretOffsetInSearchedText() {
+  if (state.mode === 'source') return source.selectionStart;
+  const o = getEditorPlainOffset();
+  return o == null ? 0 : o;
+}
+
+// Walk text nodes of `root` and produce a Range covering [start, end)
+// in the concatenated textContent.
+function rangeFromTextOffsets(root, start, end) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const r = document.createRange();
+  let cum = 0;
+  let placedStart = false;
+  let n;
+  while ((n = walker.nextNode())) {
+    const len = n.nodeValue.length;
+    if (!placedStart && cum + len >= start) {
+      r.setStart(n, start - cum);
+      placedStart = true;
+    }
+    if (placedStart && cum + len >= end) {
+      r.setEnd(n, end - cum);
+      return r;
+    }
+    cum += len;
+  }
+  return null;
+}
+
+function clearEditorHighlights() {
+  if (editorMatchHL)   editorMatchHL.clear();
+  if (editorCurrentHL) editorCurrentHL.clear();
+}
+
+function openFind() {
+  if (findState.open) {
+    findInput.focus();
+    findInput.select();
+    return;
+  }
+  findState.open = true;
+  findPanel.hidden = false;
+  document.body.classList.add('searching');
+  // Pre-fill from current selection in whichever pane is active.
+  const sel = state.mode === 'editor'
+    ? (window.getSelection()?.toString() || '')
+    : source.value.substring(source.selectionStart, source.selectionEnd);
+  if (sel && !sel.includes('\n')) findInput.value = sel;
+  runFind();
+  findInput.focus();
+  findInput.select();
+}
+
+function closeFind() {
+  findState.open = false;
+  findPanel.hidden = true;
+  document.body.classList.remove('searching');
+  findHL.innerHTML = '';
+  findHL.hidden = true;
+  clearEditorHighlights();
+  (state.mode === 'editor' ? editor : source).focus();
+}
+
+function computeMatches() {
+  const q = findInput.value;
+  findState.query = q;
+  if (!q) { findState.matches = []; findState.index = -1; return; }
+  let pattern = escapeRegex(q);
+  if (findState.wholeWord) {
+    // Unicode-aware whole-word boundary. JS `\b` is ASCII-only and breaks
+    // on accented chars and queries that start/end with a non-word char.
+    const wordChar = '[\\p{L}\\p{N}_]';
+    if (/^[\p{L}\p{N}_]/u.test(q)) pattern = `(?<!${wordChar})${pattern}`;
+    if (/[\p{L}\p{N}_]$/u.test(q)) pattern = `${pattern}(?!${wordChar})`;
+  }
+  const flags = 'gu' + (findState.matchCase ? '' : 'i');
+  const matches = [];
+  const text = searchedText();
+  try {
+    const re = new RegExp(pattern, flags);
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (m[0].length === 0) { re.lastIndex++; continue; }
+      matches.push({ start: m.index, end: m.index + m[0].length });
+    }
+  } catch {}
+  findState.matches = matches;
+  if (matches.length === 0) {
+    findState.index = -1;
+  } else if (findState.index < 0 || findState.index >= matches.length) {
+    const caret = currentCaretOffsetInSearchedText();
+    const i = matches.findIndex(m => m.start >= caret);
+    findState.index = i >= 0 ? i : 0;
+  }
+}
+
+function renderFindHL() {
+  if (state.mode === 'source') {
+    clearEditorHighlights();
+    if (findState.matches.length === 0 || isLargeDoc(source.value)) {
+      // Skip painting the overlay for huge docs — escapeHtml on the full
+      // text would block the renderer. Navigation (scroll to match) and
+      // counter still work. Visual highlight is sacrificed.
+      findHL.innerHTML = '';
+      findHL.hidden = true;
+      return;
+    }
+    findHL.hidden = false;
+    let html = '';
+    let pos = 0;
+    const text = source.value;
+    for (let i = 0; i < findState.matches.length; i++) {
+      const m = findState.matches[i];
+      html += escapeHtml(text.slice(pos, m.start));
+      const cls = i === findState.index ? ' class="current"' : '';
+      html += `<mark${cls}>${escapeHtml(text.slice(m.start, m.end))}</mark>`;
+      pos = m.end;
+    }
+    html += escapeHtml(text.slice(pos));
+    findHL.innerHTML = html;
+    findHL.scrollTop = source.scrollTop;
+    findHL.scrollLeft = source.scrollLeft;
+  } else {
+    // editor mode → use Highlight API; keep find-hl pre out of view
+    findHL.innerHTML = '';
+    findHL.hidden = true;
+    if (!editorMatchHL) return;     // API unsupported — nav still works
+    editorMatchHL.clear();
+    editorCurrentHL.clear();
+    for (let i = 0; i < findState.matches.length; i++) {
+      const m = findState.matches[i];
+      const r = rangeFromTextOffsets(editor, m.start, m.end);
+      if (!r) continue;
+      if (i === findState.index) editorCurrentHL.add(r);
+      else                       editorMatchHL.add(r);
+    }
+  }
+}
+
+function updateCounter() {
+  if (findState.matches.length === 0) {
+    findCounter.textContent = findInput.value ? 'No results' : '0/0';
+  } else {
+    findCounter.textContent = `${findState.index + 1}/${findState.matches.length}`;
+  }
+}
+
+function gotoMatch(i) {
+  if (i < 0 || i >= findState.matches.length) return;
+  findState.index = i;
+  const m = findState.matches[i];
+  if (state.mode === 'source') {
+    // Place a zero-width caret at the match start so the textarea's
+    // selection rectangle (blue) doesn't cover our orange `mark.current`.
+    // Closing the find panel will then drop the user right at the match.
+    source.selectionStart = m.start;
+    source.selectionEnd   = m.start;
+    // Centre the match's *visual* line. Counting newlines is wrong for
+    // long lines that wrap, so locate the position via a Range inside
+    // source-hl (same content, same wrap as the textarea) and use its
+    // bounding rect to compute the real on-screen y.
+    const yInContent = visualYOfSourceOffset(m.start);
+    if (yInContent != null) {
+      const lineH = parseFloat(getComputedStyle(source).lineHeight) || 20;
+      source.scrollTop = Math.max(0, yInContent + lineH / 2 - source.clientHeight / 2);
+    }
+  } else {
+    // Scroll the editor so the current match is visible without taking
+    // focus away from the find input.
+    const r = rangeFromTextOffsets(editor, m.start, m.end);
+    if (r) {
+      const rect = r.getBoundingClientRect();
+      const pane = editor.getBoundingClientRect();
+      if (rect.top < pane.top || rect.bottom > pane.bottom) {
+        editor.scrollTop += rect.top - pane.top - editor.clientHeight / 2;
+      }
+    }
+  }
+  updateCounter();
+  renderFindHL();
+}
+
+function runFind() {
+  computeMatches();
+  updateCounter();
+  if (findState.matches.length > 0) gotoMatch(findState.index);
+  else renderFindHL();
+}
+
+function nextMatch() {
+  if (findState.matches.length === 0) return;
+  gotoMatch((findState.index + 1) % findState.matches.length);
+}
+function prevMatch() {
+  if (findState.matches.length === 0) return;
+  gotoMatch((findState.index - 1 + findState.matches.length) % findState.matches.length);
+}
+
+function replaceCurrent() {
+  if (findState.matches.length === 0 || findState.index < 0) return;
+  const m = findState.matches[findState.index];
+  const repl = findReplace.value;
+  if (state.mode === 'source') {
+    const before = source.value.slice(0, m.start);
+    const after  = source.value.slice(m.end);
+    source.value = before + repl + after;
+    source.dispatchEvent(new Event('input'));
+  } else {
+    const r = rangeFromTextOffsets(editor, m.start, m.end);
+    if (!r) return;
+    r.deleteContents();
+    if (repl) r.insertNode(document.createTextNode(repl));
+    syncFromEditor();
+  }
+  const at = m.start + repl.length;
+  computeMatches();
+  if (findState.matches.length === 0) {
+    findState.index = -1;
+    updateCounter();
+    renderFindHL();
+    return;
+  }
+  const i = findState.matches.findIndex(x => x.start >= at);
+  findState.index = i >= 0 ? i : 0;
+  gotoMatch(findState.index);
+}
+
+function replaceAll() {
+  if (findState.matches.length === 0) return;
+  const repl = findReplace.value;
+  if (state.mode === 'source') {
+    let value = source.value;
+    for (let i = findState.matches.length - 1; i >= 0; i--) {
+      const m = findState.matches[i];
+      value = value.slice(0, m.start) + repl + value.slice(m.end);
+    }
+    source.value = value;
+    source.dispatchEvent(new Event('input'));
+  } else {
+    // Walk in reverse so earlier ranges stay valid.
+    for (let i = findState.matches.length - 1; i >= 0; i--) {
+      const m = findState.matches[i];
+      const r = rangeFromTextOffsets(editor, m.start, m.end);
+      if (!r) continue;
+      r.deleteContents();
+      if (repl) r.insertNode(document.createTextNode(repl));
+    }
+    syncFromEditor();
+  }
+  computeMatches();
+  updateCounter();
+  renderFindHL();
+}
+
+findInput.addEventListener('input', runFind);
+findCaseBtn.addEventListener('click', () => {
+  findState.matchCase = !findState.matchCase;
+  findCaseBtn.classList.toggle('active', findState.matchCase);
+  findInput.focus();
+  runFind();
+});
+findWordBtn.addEventListener('click', () => {
+  findState.wholeWord = !findState.wholeWord;
+  findWordBtn.classList.toggle('active', findState.wholeWord);
+  findInput.focus();
+  runFind();
+});
+document.getElementById('find-prev').addEventListener('click', () => { prevMatch(); findInput.focus(); });
+document.getElementById('find-next').addEventListener('click', () => { nextMatch(); findInput.focus(); });
+document.getElementById('find-close').addEventListener('click', closeFind);
+document.getElementById('find-replace-next').addEventListener('click', () => { replaceCurrent(); findInput.focus(); });
+document.getElementById('find-replace-all').addEventListener('click',  () => { replaceAll();     findInput.focus(); });
+
+findInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? prevMatch() : nextMatch(); }
+});
+findReplace.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); replaceCurrent(); }
+});
+// Esc anywhere (panel buttons or inputs, or even when focus is back in
+// the textarea) closes the find panel as long as it's open.
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && findState.open) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeFind();
+  }
+}, { capture: true });
+
+// Keep highlight overlay scrolled in sync with the textarea.
+source.addEventListener('scroll', () => {
+  if (!findHL.hidden) {
+    findHL.scrollTop  = source.scrollTop;
+    findHL.scrollLeft = source.scrollLeft;
+  }
+});
+// Keep matches in sync with edits in either pane.
+source.addEventListener('input', () => {
+  if (findState.open && state.mode === 'source') { computeMatches(); updateCounter(); renderFindHL(); }
+});
+editor.addEventListener('input', () => {
+  if (findState.open && state.mode === 'editor') { computeMatches(); updateCounter(); renderFindHL(); }
 });
 
 source.value = '';
@@ -2543,3 +3280,9 @@ updateProgress();
 try {
   if (localStorage.getItem(VIEW_MODE_KEY) === 'editor') setMode('editor');
 } catch {}
+
+// Restore the previously open tabs unless this window was launched
+// with ?fresh=1 (Cmd+Shift+N → New Window).
+const isFreshWindow =
+  new URLSearchParams(window.location.search).get('fresh') === '1';
+if (!isFreshWindow) restoreTabs();

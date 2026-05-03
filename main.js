@@ -23,8 +23,8 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
+function createWindow(opts = {}) {
+  const win = new BrowserWindow({
     width: 920,
     height: 720,
     minWidth: 480,
@@ -41,18 +41,32 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
+  // `fresh: true` skips restoring the saved tab list so a brand-new
+  // window opens with a blank `untitled.md` instead of inheriting the
+  // tabs from a previous instance.
+  const loadOpts = opts.fresh ? { query: { fresh: '1' } } : undefined;
+  win.loadFile(path.join(__dirname, 'src', 'index.html'), loadOpts);
 
   // Reload is intentionally disabled. Block F5 and ⌘⇧R / Ctrl+Shift+R at
   // the webContents level (menu item is also gone). Plain ⌘R / Ctrl+R is
   // the editor's blockquote shortcut — the renderer handles it and calls
   // preventDefault, so no reload fires there either.
-  mainWindow.webContents.on('before-input-event', (event, input) => {
+  win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const k = (input.key || '').toLowerCase();
     if (k === 'f5') return event.preventDefault();
     if ((input.meta || input.control) && input.shift && k === 'r') return event.preventDefault();
   });
+
+  if (!mainWindow) mainWindow = win;
+  return win;
+}
+
+// Helper: send a menu IPC to the currently focused window. Falls back to
+// mainWindow if nothing has focus (rare on macOS).
+function sendToFocused(channel, payload) {
+  const w = BrowserWindow.getFocusedWindow() || mainWindow;
+  if (w && w.webContents) w.webContents.send(channel, payload);
 }
 
 const macMenu = Menu.buildFromTemplate([
@@ -71,18 +85,24 @@ const macMenu = Menu.buildFromTemplate([
   {
     label: 'File',
     submenu: [
-      { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => mainWindow.webContents.send('menu', 'open') },
-      { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => mainWindow.webContents.send('menu', 'save') },
-      { label: 'Save As…', accelerator: 'Shift+CmdOrCtrl+S', click: () => mainWindow.webContents.send('menu', 'saveAs') },
+      { label: 'New', accelerator: 'CmdOrCtrl+N', click: () => sendToFocused('menu', 'new') },
+      { label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => createWindow({ fresh: true }) },
+      { type: 'separator' },
+      { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => sendToFocused('menu', 'open') },
+      { type: 'separator' },
+      { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => sendToFocused('menu', 'save') },
+      { label: 'Save As…', accelerator: 'Shift+CmdOrCtrl+S', click: () => sendToFocused('menu', 'saveAs') },
+      { type: 'separator' },
+      { label: 'Close', accelerator: 'CmdOrCtrl+W', click: () => sendToFocused('menu', 'close') },
     ],
   },
   {
     label: 'Edit',
     submenu: [
       { label: 'Undo', accelerator: 'CmdOrCtrl+Z',
-        click: () => mainWindow && mainWindow.webContents.send('app-cmd', 'undo') },
+        click: () => sendToFocused('app-cmd', 'undo') },
       { label: 'Redo', accelerator: 'Shift+CmdOrCtrl+Z',
-        click: () => mainWindow && mainWindow.webContents.send('app-cmd', 'redo') },
+        click: () => sendToFocused('app-cmd', 'redo') },
       { type: 'separator' },
       { role: 'cut' },
       { role: 'copy' },
@@ -96,9 +116,9 @@ const macMenu = Menu.buildFromTemplate([
       { label: 'Toggle Fullscreen', role: 'togglefullscreen', accelerator: 'CmdOrCtrl+Shift+F' },
       { type: 'separator' },
       { label: 'Increase Font', accelerator: 'CmdOrCtrl+Plus',
-        click: () => mainWindow && mainWindow.webContents.send('zoom', +0.1) },
+        click: () => sendToFocused('zoom', +0.1) },
       { label: 'Decrease Font', accelerator: 'CmdOrCtrl+-',
-        click: () => mainWindow && mainWindow.webContents.send('zoom', -0.1) },
+        click: () => sendToFocused('zoom', -0.1) },
     ],
   },
 ]);
@@ -140,11 +160,12 @@ app.whenReady().then(() => {
   // Offer to install the `mini` CLI shortcut on first run.
   mainWindow.webContents.once('did-finish-load', () => {
     if (pendingOpenPath) {
-      try {
-        const content = fs.readFileSync(pendingOpenPath, 'utf8');
-        mainWindow.webContents.send('open-file-from-os', { path: pendingOpenPath, content });
-      } catch (e) { console.warn('open-file failed', e); }
+      const p = pendingOpenPath;
       pendingOpenPath = null;
+      safeReadFile(p, mainWindow).then((content) => {
+        if (content == null) return;
+        mainWindow.webContents.send('open-file-from-os', { path: p, content });
+      });
     }
     maybeOfferCliInstall().catch((e) => console.warn('cli install offer failed', e));
   });
@@ -235,31 +256,81 @@ app.on('window-all-closed', () => {
 
 /* macOS forwards `mini somefile.md` (or a Finder open) as open-file events. */
 let pendingOpenPath = null;
+/* Hard cap on file size we'll load. The textarea-based renderer can't
+ * lay out arbitrarily large text — Chromium's text shaper (skrifa)
+ * eventually OOMs on very big documents. 32 MB is the upper bound we
+ * accept; above 16 MB the renderer also drops syntax highlighting and
+ * the find overlay (see LARGE_DOC in renderer.js). */
+const MAX_FILE_SIZE = 32 * 1024 * 1024;
+
+async function safeReadFile(filePath, parentWin) {
+  let stat;
+  try { stat = await fs.promises.stat(filePath); } catch (e) {
+    console.warn('stat failed', filePath, e);
+    return null;
+  }
+  if (stat.size > MAX_FILE_SIZE) {
+    const mb  = (stat.size / (1024 * 1024)).toFixed(1);
+    const max = (MAX_FILE_SIZE / (1024 * 1024)).toFixed(0);
+    try {
+      await dialog.showMessageBox(parentWin || mainWindow, {
+        type: 'warning',
+        title: 'File too large',
+        message: `${path.basename(filePath)} is ${mb} MB`,
+        detail: `mini won't open files larger than ${max} MB. The plain-text editor can't lay out documents that big without exhausting memory.`,
+        buttons: ['OK'],
+      });
+    } catch {}
+    return null;
+  }
+  try {
+    return await fs.promises.readFile(filePath, 'utf8');
+  } catch (e) {
+    console.warn('read failed', filePath, e);
+    return null;
+  }
+}
+
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
   if (mainWindow && mainWindow.webContents) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
+    safeReadFile(filePath, mainWindow).then((content) => {
+      if (content == null) return;
       mainWindow.webContents.send('open-file-from-os', { path: filePath, content });
-    } catch (e) { console.warn('open-file failed', e); }
+    });
   } else {
     pendingOpenPath = filePath;
   }
 });
 
-ipcMain.handle('open-file', async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle('open-file', async (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender) || mainWindow;
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
     properties: ['openFile'],
     filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
   });
   if (canceled || !filePaths[0]) return null;
-  const content = fs.readFileSync(filePaths[0], 'utf8');
+  const content = await safeReadFile(filePaths[0], win);
+  if (content == null) return null;
   return { path: filePaths[0], content };
 });
 
-ipcMain.handle('save-file', async (_e, { path: filePath, content, forceDialog }) => {
+ipcMain.handle('read-file', async (e, filePath) => {
+  const win = BrowserWindow.fromWebContents(e.sender) || mainWindow;
+  const content = await safeReadFile(filePath, win);
+  if (content == null) return null;
+  return { path: filePath, content };
+});
+
+ipcMain.on('close-window', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (win) win.close();
+});
+
+ipcMain.handle('save-file', async (e, { path: filePath, content, forceDialog }) => {
+  const win = BrowserWindow.fromWebContents(e.sender) || mainWindow;
   if (!filePath || forceDialog) {
-    const { canceled, filePath: chosen } = await dialog.showSaveDialog(mainWindow, {
+    const { canceled, filePath: chosen } = await dialog.showSaveDialog(win, {
       defaultPath: filePath || 'untitled.md',
       filters: [{ name: 'Markdown', extensions: ['md'] }],
     });

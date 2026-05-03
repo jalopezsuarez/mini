@@ -27,6 +27,12 @@
   --selection: #3a3633;
   --caret:     #c96442;
 
+  /* Find / Replace match colors */
+  --find-bg:         #ffff4c;
+  --find-fg:         #000000;
+  --find-current-bg: #fd9845;
+  --find-current-fg: #000000;
+
   --mono: 'sf-mono', ui-monospace, monospace;
   --serif-fallback: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
@@ -56,7 +62,8 @@ html, body {
  * Add or override here; classes are produced by the tokeniser
  * in renderer.js. */
 .hl-h  { color: #68ecec; }                       /* headers */
-.hl-l  { color: #9fe872; font-weight: 600; }     /* list markers */
+.hl-l  { color: #73b7fb; font-weight: 600; }     /* list markers (numbered + unordered) */
 .hl-q  { color: #f27d86; font-weight: 600; }     /* blockquote ">" */
-.hl-c  { color: #bc85f9; }                       /* code backticks / fences */
-.hl-em { color: #fee383; }                       /* bold / italic / underline */
+.hl-c  { color: #9fe872; }                       /* code backticks / fences */
+.hl-em { color: #ca7def; }                       /* bold / italic / underline */
+.hl-t  { color: #f9af6a; }                       /* tables */

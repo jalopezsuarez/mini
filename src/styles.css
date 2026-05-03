@@ -36,11 +36,95 @@ html, body {
   overflow: hidden;
 }
 
-.app {
-  display: grid;
-  grid-template-rows: 36px 1fr 40px 4px;
-  height: 100vh;
+body {
+  display: flex;
+  flex-direction: column;
 }
+
+.workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.app {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 36px 1fr;
+  height: 100%;
+}
+
+/* ----------- Left sidebar — open files / recents ----------- */
+.sidebar {
+  flex: 0 0 200px;
+  background: #1a1919;
+  border-right: 1px solid var(--border);
+  padding-top: 36px;            /* clear the macOS traffic lights area */
+  overflow-y: auto;
+  user-select: none;
+  -webkit-app-region: drag;     /* empty zones drag the window */
+  position: relative;
+}
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  -webkit-app-region: no-drag;
+  z-index: 5;
+}
+.sidebar[hidden] { display: none; }
+.sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  -webkit-app-region: no-drag;
+}
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.tab-item:hover            { color: var(--fg); }
+.tab-item.active           { color: var(--fg); }
+.tab-item.dragging         { opacity: 0.4; }
+.tab-item.drag-over-top    { box-shadow: inset 0 2px 0 0 var(--accent); }
+.tab-item.drag-over-bottom { box-shadow: inset 0 -2px 0 0 var(--accent); }
+.tab-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-item.dirty .tab-name { color: #e4bb84; }
+.tab-close {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: var(--fg-dim);
+  font-size: 14px;
+  line-height: 1;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: no-drag;
+}
+.tab-item:hover .tab-close { opacity: 1; }
+.tab-close:hover           { background: rgba(255, 255, 255, 0.1); color: var(--fg); }
 
 .titlebar {
   position: relative;
@@ -50,9 +134,10 @@ html, body {
   justify-content: center;
   gap: 8px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--fg-dim);
+  background: var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  color: var(--fg);
 }
 
 .titlebar .title { letter-spacing: .02em; }
@@ -73,8 +158,8 @@ html, body {
   position: absolute;
   inset: 0;
   margin: 0;
-  /* content column capped at 840px, centred. min 24px gutter when narrower. */
-  padding: 32px max(24px, calc((100% - 840px) / 2));
+  /* content column capped at 780px, centred. min 24px gutter when narrower. */
+  padding: 32px max(24px, calc((100% - 780px) / 2));
   border: 0;
   outline: 0;
   background: transparent;
@@ -113,6 +198,14 @@ textarea#source {
   caret-color: var(--caret, #c96442);
   background: transparent;
 }
+/* For very large documents we skip the syntax-highlight overlay; let
+ * the textarea paint its own text so the user can still read it. */
+body.huge-doc textarea#source {
+  color: var(--fg);
+  -webkit-text-fill-color: var(--fg);
+}
+body.huge-doc #source-hl,
+body.huge-doc #find-hl { display: none; }
 /* Selection: paint the text white on a solid blue rectangle so it
  * covers the highlight overlay underneath. */
 textarea#source::selection {
@@ -127,6 +220,8 @@ textarea#source::selection {
   justify-content: space-between;
   gap: 16px;
   padding: 0 14px;
+  height: 34px;
+  flex: 0 0 34px;
   border-top: 1px solid var(--border);
   background: #1a1919;
   user-select: none;
@@ -164,27 +259,24 @@ textarea#source::selection {
   -webkit-app-region: no-drag;
 }
 .toolbar-collapse { flex: 0 0 auto; }
-.toolbar-collapse:hover { color: var(--fg); background: rgba(255, 255, 255, 0.06); }
+.toolbar-collapse:hover { color: var(--fg); }
 
 .toolbar-fab {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
+  right: 14px;
+  bottom: 10px;
   z-index: 10;
   display: none;
   background: #191a1b;
 }
-.toolbar-fab:hover { color: var(--fg); background: #232425; }
+.toolbar-fab:hover { color: var(--fg); }
 
 .toolbar-collapse svg,
 .toolbar-fab svg { display: block; }
 
 /* Collapsed state */
-.app[data-toolbar="collapsed"] {
-  grid-template-rows: 36px 1fr 0 4px;
-}
-.app[data-toolbar="collapsed"] .toolbar { display: none; }
-.app[data-toolbar="collapsed"] .toolbar-fab { display: inline-flex; }
+body[data-toolbar="collapsed"] .toolbar { display: none; }
+body[data-toolbar="collapsed"] .toolbar-fab { display: inline-flex; }
 
 .tools .tool-btn {
   display: inline-flex;
@@ -192,6 +284,7 @@ textarea#source::selection {
   gap: 4px;
   padding: 0;
   margin: 0 6px;
+  border: 0;
   background: transparent;
   color: var(--fg-dim);
   font: inherit;
@@ -199,9 +292,12 @@ textarea#source::selection {
   white-space: nowrap;
   user-select: none;
   -webkit-user-select: none;
-  cursor: default;
-  pointer-events: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
 }
+.tools .tool-btn:hover  { color: var(--fg); }
+.tools .tool-btn:active { opacity: 0.6; }
+.tools .tool-btn:focus  { outline: 0; }
 
 .line-info {
   position: absolute;
@@ -300,3 +396,130 @@ textarea#source::selection {
   border-radius: 4px;
 }
 .pane::-webkit-scrollbar-thumb:hover { background: var(--border); }
+
+/* ============================================================
+ *  Find / Replace
+ * ============================================================ */
+
+/* Match overlay — sits ABOVE source-hl (which is opaque) and below the
+ * textarea caret. Non-match text is transparent so the syntax-highlighted
+ * tokens underneath remain visible; only matches paint a coloured rect
+ * with their own foreground colour, replacing the token visual in that
+ * span. Defaults common to all themes — see --find-* variables. */
+#find-hl {
+  pointer-events: none;
+  z-index: 1;
+  margin: 0;
+  overflow: hidden;
+  user-select: none;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+#find-hl[hidden] { display: none; }
+#find-hl mark,
+#find-hl mark.current { border-radius: 0; }
+#find-hl mark {
+  background: var(--find-bg, #ffff4c);
+  color: var(--find-fg, #000000);
+  -webkit-text-fill-color: var(--find-fg, #000000);
+}
+#find-hl mark.current {
+  background: var(--find-current-bg, #fd9845);
+  color: var(--find-current-fg, #000000);
+  -webkit-text-fill-color: var(--find-current-fg, #000000);
+}
+
+/* Editor mode highlights — CSS Custom Highlight API. */
+::highlight(find-match) {
+  background-color: var(--find-bg, #ffff4c);
+  color: var(--find-fg, #000000);
+}
+::highlight(find-current) {
+  background-color: var(--find-current-bg, #fd9845);
+  color: var(--find-current-fg, #000000);
+}
+
+/* Floating find panel — sits in the same corner as line-info. While
+ * it's open, the line-info pill is hidden so they don't overlap. */
+.find-panel {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 6;
+  width: min(420px, calc(100% - 24px));
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 4px;
+  padding: 6px;
+  background: #1a1919;
+  border: 0;
+  border-radius: 4px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  -webkit-app-region: no-drag;
+}
+.find-panel[hidden] { display: none; }
+body.searching .line-info { display: none; }
+
+.find-input, .find-replace {
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--fg);
+  padding: 3px 6px;
+  font: inherit;
+  outline: 0;
+}
+.find-input:focus,
+.find-replace:focus { border-color: rgba(255, 255, 255, 0.25); }
+.find-input    { grid-column: 1; grid-row: 1; }
+.find-replace  { grid-column: 1; grid-row: 2; }
+
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.find-row-top    { grid-column: 2; grid-row: 1; }
+.find-row-bottom { grid-column: 2; grid-row: 2; }
+
+.find-counter {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  margin-right: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.find-btn,
+.find-btn-icon,
+.find-toggle {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 2px 6px;
+  font: inherit;
+  border-radius: 3px;
+  -webkit-app-region: no-drag;
+}
+.find-btn-icon { padding: 0 4px; min-width: 20px; line-height: 1; font-size: 14px; }
+#find-close    { font-size: 18px; }
+.find-btn:hover,
+.find-btn-icon:hover,
+.find-toggle:hover  { color: var(--fg); background: rgba(255, 255, 255, 0.06); }
+.find-toggle.active { color: var(--fg); background: rgba(255, 255, 255, 0.16); }
+.find-btn:focus,
+.find-btn-icon:focus,
+.find-toggle:focus  { outline: 0; }

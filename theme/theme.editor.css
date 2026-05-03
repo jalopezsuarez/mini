@@ -34,6 +34,12 @@
   --rule:       #3a3735;
   --quote-bar:  #c96442;
 
+  /* Find / Replace match colors */
+  --find-bg:         #ffff4c;
+  --find-fg:         #000000;
+  --find-current-bg: #fd9845;
+  --find-current-fg: #000000;
+
   --serif: 'copernicus', -apple-system, system-ui, sans-serif;
   --sans:  'copernicus', -apple-system, system-ui, sans-serif;
   --mono:  'sf-mono', ui-monospace, monospace;
