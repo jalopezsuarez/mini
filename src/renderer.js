@@ -2132,7 +2132,8 @@ function renderSidebar() {
     attachTabDnD(li, i);
     sidebarList.appendChild(li);
   }
-  sidebarEl.hidden = state.tabs.length === 0;
+  // Only show the sidebar when there's more than one open tab.
+  sidebarEl.hidden = state.tabs.length < 2;
 }
 
 /* ---------- Drag-and-drop reorder ---------- */
