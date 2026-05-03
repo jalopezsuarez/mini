@@ -2,7 +2,7 @@
 
 **Write without distractions. Publish without friction.**
 
-`mini` is a minimalist Markdown editor for macOS. Built for anyone who needs to write well, fast, and without clutter: notes, documentation, articles, ideas. One window, one font, one thing to do — *write*.
+`mini` is a minimalist Markdown editor for **macOS and Windows**. Built for anyone who needs to write well, fast, and without clutter: notes, documentation, articles, ideas. One window, one font, one thing to do — *write*.
 
 ---
 
@@ -15,7 +15,7 @@
 - **Auto-numbered headers.** `⌘⇧H` numbers your sections automatically (1., 1.1, 1.1.1…). Perfect for technical docs, manuals, or reports.
 - **Your typography, your style.** Drop a font or a CSS file into the `theme/` folder and `mini` picks it up. No code required.
 - **Launch from the terminal.** Install the `mini` command with one click and open any file with `mini notes.md`.
-- **Native macOS.** Double-click any `.md` from Finder and it opens. Like any app that respects its place.
+- **Native to your OS.** Double-click any `.md` from Finder or Explorer and it opens. Like any app that respects its place.
 - **Lightweight.** Fast to start, small footprint, no accounts, no phoning home.
 
 ## Who it's for
@@ -26,6 +26,8 @@
 - **Anyone tired** of bloated editors that take longer to open than to close.
 
 ## Essential shortcuts
+
+> On Windows, use `Ctrl` wherever the table shows `⌘`.
 
 | Action                         | Shortcut            |
 | ------------------------------ | ------------------- |
@@ -46,7 +48,7 @@
 
 ## Technical overview
 
-`mini` is a macOS desktop app built with [Electron](https://www.electronjs.org/). The frontend is **vanilla JS** with zero runtime dependencies; all editor logic lives in `src/`.
+`mini` is a desktop app built with [Electron](https://www.electronjs.org/), shipped for **macOS** (Apple Silicon and Intel) and **Windows x64**. The frontend is **vanilla JS** with zero runtime dependencies; all editor logic lives in `src/`.
 
 ### Project structure
 
@@ -60,7 +62,7 @@ mini/
 
 ### Requirements
 
-- macOS (Apple Silicon or Intel)
+- macOS (Apple Silicon or Intel) or Windows 10+ x64
 - Node.js 18+ and npm (development only)
 
 ### Development
@@ -73,16 +75,22 @@ npm start
 ### Packaging the app
 
 ```bash
-# Apple Silicon only
+# macOS — Apple Silicon
 npm run package
 
-# Universal (Intel + Apple Silicon)
+# macOS — Intel x64
+npm run package:intel
+
+# macOS — Universal (Intel + Apple Silicon)
 npm run package:universal
+
+# Windows x64
+npm run package:win
 ```
 
 The resulting bundle ends up in `dist/`.
 
-### `mini` terminal command
+### `mini` terminal command  *(macOS only)*
 
 On first launch, the app offers to install `/usr/local/bin/mini` so you can run it from the shell:
 
@@ -99,8 +107,9 @@ mini notes.md       # open a file
 
 > **Where to find the `theme/` folder:**
 > - In development: `theme/` at the project root.
-> - In the installed app: `/Applications/mini.app/Contents/Resources/app/theme/`
+> - In the installed app (macOS): `/Applications/mini.app/Contents/Resources/app/theme/`
 >   (right-click `mini.app` → *Show Package Contents*).
+> - In the installed app (Windows): `mini-win32-x64\resources\app\theme\` next to `mini.exe`.
 
 ### Two views, two themes
 
