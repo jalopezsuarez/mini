@@ -1,0 +1,62 @@
+/* --------------------------------------------------------------
+ * mini — source view theme (raw .md textarea)
+ *
+ * Plain CSS. Everything in this file is automatically scoped to
+ * the source pane at load time, so you can write selectors as if
+ * the textarea itself were :root. Variables defined under :root
+ * apply only to this pane.
+ *
+ * Drop-in path inside the packaged app:
+ *   /Applications/mini.app/Contents/Resources/app/theme/theme.source.css
+ *
+ * Custom fonts: just drop any .ttf / .otf / .woff / .woff2 into
+ * this same theme/ folder. mini auto-registers them at startup,
+ * using the filename (without extension) as the font-family.
+ *
+ * Example: copy `JetBrainsMono.ttf` here, then write:
+ *
+ *   :root { --mono: 'JetBrainsMono', ui-monospace, monospace; }
+ * -------------------------------------------------------------- */
+
+:root {
+  /* Claude dark palette */
+  --bg:        #252524;
+  --fg:        #e7e5e2;
+  --fg-dim:    #8b8782;
+  --accent:    #c96442;   /* Claude orange */
+  --selection: #3a3633;
+  --caret:     #c96442;
+
+  --mono: ui-monospace, "SF Mono", Menlo, Monaco, "JetBrains Mono", Consolas, monospace;
+  --serif-fallback: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.65;
+  letter-spacing: 0.005em;
+  caret-color: var(--caret);
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+
+::selection {
+  background: var(--selection);
+  color: var(--fg);
+}
+
+::placeholder {
+  color: var(--fg-dim);
+  opacity: .55;
+}
+
+/* Token colours for the source overlay (.pane.source.hl).
+ * Add or override here; classes are produced by the tokeniser
+ * in renderer.js. */
+.hl-h  { color: #68ecec; }                       /* headers */
+.hl-l  { color: #9fe872; font-weight: 600; }     /* list markers */
+.hl-q  { color: #f27d86; font-weight: 600; }     /* blockquote ">" */
+.hl-c  { color: #bc85f9; }                       /* code backticks / fences */
+.hl-em { color: #fee383; }                       /* bold / italic / underline */

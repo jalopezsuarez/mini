@@ -1,0 +1,271 @@
+/* --------------------------------------------------------------
+ * mini — base shell. Visual styling for the .md content lives in
+ * theme/theme.source.css and theme/theme.editor.css.
+ * Defaults below are neutral so the app still looks reasonable
+ * if the user empties out the theme files.
+ * -------------------------------------------------------------- */
+
+:root {
+  --bg: #1f1e1d;
+  --bg-2: #262624;
+  --bg-3: #2e2c2a;
+  --fg: #e7e5e2;
+  --fg-dim: #8b8782;
+  --accent: #c96442;
+  --border: #3a3735;
+}
+
+* { box-sizing: border-box; }
+
+/* Selection — same in source and editor modes */
+::selection {
+  background: #3d86e0;
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+.app {
+  display: grid;
+  grid-template-rows: 36px 1fr 44px 4px;
+  height: 100vh;
+}
+
+.titlebar {
+  position: relative;
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.titlebar .title { letter-spacing: .02em; }
+.dirty-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: transparent;
+}
+.app[data-dirty="true"] .dirty-dot { background: var(--accent); }
+
+.panes {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  zoom: var(--user-zoom, 1);  /* user-controllable zoom — affects only the editing area */
+}
+
+.pane {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  /* content column capped at 840px, centred. min 24px gutter when narrower. */
+  padding: 32px max(24px, calc((100% - 840px) / 2));
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  overflow-y: auto;
+  overflow-x: hidden;
+  resize: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.pane[hidden] { display: none; }
+
+.pane.source {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-word;
+  tab-size: 2;
+}
+
+/* Source highlight overlay: a <pre> behind the textarea showing the
+ * same text but tokenised. The textarea's text is rendered
+ * transparent so only the overlay's coloured tokens are visible. */
+#source-hl {
+  pointer-events: none;
+  z-index: 0;
+  margin: 0;
+  overflow: hidden;
+  user-select: none;
+}
+textarea#source {
+  z-index: 1;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--caret, #c96442);
+  background: transparent;
+}
+/* Selection: paint the text white on a solid blue rectangle so it
+ * covers the highlight overlay underneath. */
+textarea#source::selection {
+  background: #3d86e0;
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+  user-select: none;
+  overflow: hidden;
+}
+.tools { justify-content: center; }
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+  scrollbar-width: none;          /* Firefox */
+  -webkit-overflow-scrolling: touch;
+  cursor: grab;
+}
+.tools::-webkit-scrollbar { display: none; }
+.tools.dragging { cursor: grabbing; }
+.tools .tool-btn { flex: 0 0 auto; }
+
+.tools .tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  margin: 0 6px;
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  pointer-events: none;
+}
+
+.line-info {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 5;
+  font-size: 10.5px;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  user-select: none;
+  pointer-events: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.line-info:empty { display: none; }
+
+.tools .ico {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+}
+.tools .ico svg { display: block; }
+.tools .ico--quote {
+  font-size: 9.5px;
+  letter-spacing: -1px;
+  transform: translateY(-0.5px);
+}
+.tools .ico-sub {
+  font-size: 0.7em;
+  margin-left: 1px;
+  font-weight: 600;
+}
+.tools .kbd {
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.sep {
+  display: inline-block;
+  flex: 0 0 1px;
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 6px;
+}
+
+.progress {
+  height: 4px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width .12s linear;
+}
+
+/* Floating copy button on code blocks (editor preview only). */
+.pane.editor pre { position: relative; }
+.pane.editor .code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg-dim, #8b8782);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  opacity: 0;
+  transition: opacity .15s ease, color .15s ease, background .15s ease;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+.pane.editor pre:hover .code-copy { opacity: 1; pointer-events: auto; }
+.pane.editor .code-copy:hover {
+  color: var(--fg, #e7e5e2);
+  background: rgba(255, 255, 255, 0.12);
+}
+.pane.editor .code-copy.copied { color: #9fe872; }
+
+/* Scrollbar — minimal */
+.pane::-webkit-scrollbar { width: 8px; }
+.pane::-webkit-scrollbar-track { background: transparent; }
+.pane::-webkit-scrollbar-thumb {
+  background: var(--bg-3);
+  border-radius: 4px;
+}
+.pane::-webkit-scrollbar-thumb:hover { background: var(--border); }
