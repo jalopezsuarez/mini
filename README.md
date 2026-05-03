@@ -1,173 +1,173 @@
 # mini
 
-**Escribe sin distracciones. Publica sin fricción.**
+**Write without distractions. Publish without friction.**
 
-`mini` es un editor de Markdown minimalista para macOS. Pensado para quien necesita escribir bien, rápido y sin estorbos: notas, documentación, artículos, ideas. Una sola ventana, una sola fuente, una sola cosa que hacer — *escribir*.
-
----
-
-## Por qué te va a gustar
-
-- **Cero distracciones.** Sin barras laterales, sin ajustes infinitos, sin sorpresas. Solo tu texto.
-- **Doble vista en un toque.** Pasa de Markdown plano a vista enriquecida con `⌘M`. La misma idea, dos formas de mirarla.
-- **Atajos a la mano.** Negrita, cursiva, listas, encabezados, tablas, citas, código… todos los gestos que ya conoces, donde los esperas.
-- **Tablas decentes de verdad.** Crear, añadir filas o columnas, eliminar — todo con teclado. Sin abrir un editor aparte.
-- **Encabezados numerados automáticamente.** `⌘⇧H` para que tus secciones se enumeren solas (1., 1.1, 1.1.1…). Ideal para documentación técnica, manuales o informes.
-- **Tu tipografía, tu estilo.** Suelta una fuente o un CSS en la carpeta `theme/` y `mini` la adopta. Sin tocar código.
-- **Lánzalo desde la terminal.** Instala el comando `mini` con un clic y abre cualquier archivo con `mini notas.md`.
-- **Nativo de macOS.** Doble clic en un `.md` desde Finder y se abre. Como cualquier app que respete su sitio.
-- **Ligero.** Arranca rápido, ocupa poco, no pide cuentas, no llama a casa.
-
-## Para quién es
-
-- **Escritores y redactores** que quieren un lienzo limpio y un Markdown impecable.
-- **Equipos técnicos** que documentan en `.md` y necesitan tablas, código y encabezados numerados sin pelear con el editor.
-- **Estudiantes e investigadores** que toman apuntes en Markdown y exportan a donde haga falta.
-- **Cualquiera cansado** de editores recargados que tardan más en abrir que en cerrar.
-
-## Atajos esenciales
-
-| Acción                       | Atajo       |
-| ---------------------------- | ----------- |
-| Cambiar vista (fuente/render) | `⌘M`        |
-| Encabezado (cíclico)          | `⌘H`        |
-| Encabezado numerado           | `⌘⇧H`       |
-| Negrita / Cursiva / Subrayado | `⌘B` / `⌘I` / `⌘U` |
-| Lista con viñetas / numerada  | `⌘L` / `⌘N` |
-| Cita / Código                 | `⌘R` / `⌘F` |
-| Línea horizontal              | `⌘P`        |
-| Tabla (nueva o añadir fila)   | `⌘T`        |
-| Borrar fila                   | `⌘⇧T`       |
-| Añadir / quitar columna       | `⌘+` / `⌘-` |
-| Aumentar / reducir fuente     | `⌘⇧+` / `⌘⇧-` |
-| Abrir / Guardar / Guardar como | `⌘O` / `⌘S` / `⌘⇧S` |
+`mini` is a minimalist Markdown editor for macOS. Built for anyone who needs to write well, fast, and without clutter: notes, documentation, articles, ideas. One window, one font, one thing to do — *write*.
 
 ---
 
-## Sección técnica (para quien le interese)
+## Why you'll like it
 
-`mini` es una app de escritorio para macOS construida con [Electron](https://www.electronjs.org/). El frontend es **vanilla JS** sin dependencias en tiempo de ejecución; toda la lógica del editor vive en `src/`.
+- **Zero distractions.** No sidebars, no endless settings, no surprises. Just your text.
+- **Two views, one tap.** Switch from raw Markdown to a rendered view with `⌘M`. The same idea, two ways to look at it.
+- **Shortcuts where you expect them.** Bold, italic, lists, headers, tables, quotes, code… every gesture you already know, exactly where it should be.
+- **Tables that actually work.** Create them, add rows or columns, delete — all from the keyboard. No separate editor needed.
+- **Auto-numbered headers.** `⌘⇧H` numbers your sections automatically (1., 1.1, 1.1.1…). Perfect for technical docs, manuals, or reports.
+- **Your typography, your style.** Drop a font or a CSS file into the `theme/` folder and `mini` picks it up. No code required.
+- **Launch from the terminal.** Install the `mini` command with one click and open any file with `mini notes.md`.
+- **Native macOS.** Double-click any `.md` from Finder and it opens. Like any app that respects its place.
+- **Lightweight.** Fast to start, small footprint, no accounts, no phoning home.
 
-### Estructura
+## Who it's for
+
+- **Writers and editors** who want a clean canvas and impeccable Markdown.
+- **Technical teams** who document in `.md` and need tables, code, and numbered headers without fighting their editor.
+- **Students and researchers** who take notes in Markdown and export wherever they need.
+- **Anyone tired** of bloated editors that take longer to open than to close.
+
+## Essential shortcuts
+
+| Action                         | Shortcut            |
+| ------------------------------ | ------------------- |
+| Toggle view (source/render)    | `⌘M`                |
+| Header (cycle levels)          | `⌘H`                |
+| Numbered header                | `⌘⇧H`               |
+| Bold / Italic / Underline      | `⌘B` / `⌘I` / `⌘U`  |
+| Bullet / Numbered list         | `⌘L` / `⌘N`         |
+| Quote / Code                   | `⌘R` / `⌘F`         |
+| Horizontal rule                | `⌘P`                |
+| Table (new or add row)         | `⌘T`                |
+| Delete row                     | `⌘⇧T`               |
+| Add / remove column            | `⌘+` / `⌘-`         |
+| Increase / decrease font size  | `⌘⇧+` / `⌘⇧-`       |
+| Open / Save / Save As          | `⌘O` / `⌘S` / `⌘⇧S` |
+
+---
+
+## Technical overview
+
+`mini` is a macOS desktop app built with [Electron](https://www.electronjs.org/). The frontend is **vanilla JS** with zero runtime dependencies; all editor logic lives in `src/`.
+
+### Project structure
 
 ```
 mini/
-├── main.js        Proceso principal de Electron (ventana, menús, IPC, CLI)
-├── preload.js     Puente seguro entre main y renderer
-├── src/           UI del editor (HTML, CSS, JS)
-└── theme/         Fuentes y CSS personalizables por el usuario
+├── main.js        Electron main process (window, menus, IPC, CLI)
+├── preload.js     Secure bridge between main and renderer
+├── src/           Editor UI (HTML, CSS, JS)
+└── theme/         User-customizable fonts and CSS
 ```
 
-### Requisitos
+### Requirements
 
-- macOS (Apple Silicon o Intel)
-- Node.js 18+ y npm (solo para desarrollo)
+- macOS (Apple Silicon or Intel)
+- Node.js 18+ and npm (development only)
 
-### Desarrollo
+### Development
 
 ```bash
 npm install
 npm start
 ```
 
-### Empaquetar la app
+### Packaging the app
 
 ```bash
-# Solo Apple Silicon
+# Apple Silicon only
 npm run package
 
 # Universal (Intel + Apple Silicon)
 npm run package:universal
 ```
 
-El bundle resultante queda en `dist/`.
+The resulting bundle ends up in `dist/`.
 
-### Comando `mini` en terminal
+### `mini` terminal command
 
-En el primer arranque, la app ofrece instalar `/usr/local/bin/mini` para lanzarla desde la consola:
+On first launch, the app offers to install `/usr/local/bin/mini` so you can run it from the shell:
 
 ```bash
-mini                # abre la app
-mini notas.md       # abre un archivo
+mini                # open the app
+mini notes.md       # open a file
 ```
 
 ---
 
-## Personaliza tu mini
+## Customize your mini
 
-`mini` está pensado para que tú decidas cómo se ve. Toda la apariencia vive en la carpeta `theme/`, separada por completo del código de la app. Edita un par de archivos CSS, suelta una fuente, y listo — al reiniciar la app, los cambios se aplican.
+`mini` is designed to let you decide how it looks. All visuals live in the `theme/` folder, completely separated from the app code. Edit a couple of CSS files, drop in a font, and you're done — restart the app and your changes take effect.
 
-> **Dónde está la carpeta `theme/`:**
-> - En desarrollo: `theme/` en la raíz del proyecto.
-> - En la app instalada: `/Applications/mini.app/Contents/Resources/app/theme/`
->   (clic derecho sobre `mini.app` → *Mostrar contenido del paquete*).
+> **Where to find the `theme/` folder:**
+> - In development: `theme/` at the project root.
+> - In the installed app: `/Applications/mini.app/Contents/Resources/app/theme/`
+>   (right-click `mini.app` → *Show Package Contents*).
 
-### Las dos vistas, dos temas
+### Two views, two themes
 
-`mini` tiene dos vistas y cada una tiene su propio archivo de estilos. Así puedes darles personalidades distintas — por ejemplo, una mono y técnica para escribir, otra serif y elegante para leer.
+`mini` has two views, and each one has its own stylesheet. You can give them distinct personalities — for example, mono and technical for writing, serif and elegant for reading.
 
-| Archivo                  | Qué controla                                                       |
-| ------------------------ | ------------------------------------------------------------------ |
-| `theme/theme.source.css` | Vista **fuente** (Markdown plano, con resaltado de tokens).        |
-| `theme/theme.editor.css` | Vista **editor** (Markdown renderizado: encabezados, citas, etc.). |
+| File                     | What it controls                                                  |
+| ------------------------ | ----------------------------------------------------------------- |
+| `theme/theme.source.css` | **Source** view (raw Markdown with token highlighting).           |
+| `theme/theme.editor.css` | **Editor** view (rendered Markdown: headings, quotes, etc.).      |
 
-Los selectores que escribas en cada archivo se aplican **solo a su panel**. Las variables `:root` que definas también — no se mezclan entre vistas.
+Selectors you write in each file apply **only to their pane**. The same goes for `:root` variables — they don't leak between views.
 
-### Cambiar colores
+### Changing colors
 
-Cada tema expone una paleta de variables CSS en `:root`. Edítalas y verás el cambio al instante (al reiniciar):
+Each theme exposes a palette of CSS variables under `:root`. Edit them and you'll see the change immediately (after a restart):
 
-**`theme.source.css` — vista de código fuente**
-
-```css
-:root {
-  --bg:        #252524;   /* fondo del panel */
-  --fg:        #e7e5e2;   /* texto base */
-  --fg-dim:    #8b8782;   /* texto atenuado, placeholder */
-  --accent:    #c96442;   /* acento (caret, énfasis) */
-  --selection: #3a3633;   /* color de selección */
-  --caret:     #c96442;   /* color del cursor */
-}
-```
-
-Y los **tokens de resaltado** (encabezados, listas, citas, código, énfasis):
-
-```css
-.hl-h  { color: #68ecec; }   /* # encabezados */
-.hl-l  { color: #9fe872; }   /* - * + listas */
-.hl-q  { color: #f27d86; }   /* > citas */
-.hl-c  { color: #bc85f9; }   /* ` ``` código */
-.hl-em { color: #fee383; }   /* **negrita** *cursiva* */
-```
-
-**`theme.editor.css` — vista renderizada**
+**`theme.source.css` — source view**
 
 ```css
 :root {
-  --bg:        #1f1e1d;   /* fondo */
-  --bg-soft:   #262624;   /* fondo de bloques (pre, th) */
-  --bg-code:   #2a2826;   /* fondo de inline code */
-  --fg:        #fafaf9;   /* texto */
-  --fg-dim:    #8b8782;   /* texto secundario */
-  --heading:   #fafaf9;   /* encabezados */
-  --accent:    #c96442;   /* enlaces, marcadores, caret */
-  --rule:      #3a3735;   /* bordes y separadores */
-  --quote-bar: #c96442;   /* barra lateral de citas */
+  --bg:        #252524;   /* pane background */
+  --fg:        #e7e5e2;   /* base text */
+  --fg-dim:    #8b8782;   /* dim text, placeholder */
+  --accent:    #c96442;   /* accent (caret, emphasis) */
+  --selection: #3a3633;   /* selection color */
+  --caret:     #c96442;   /* caret color */
 }
 ```
 
-### Cambiar fuentes
+And the **highlight tokens** (headers, lists, quotes, code, emphasis):
 
-**Paso 1 — añade el archivo.** Suelta cualquier `.ttf`, `.otf`, `.woff` o `.woff2` dentro de `theme/`. `mini` la registra automáticamente al arrancar usando el **nombre del archivo (sin extensión)** como `font-family`.
+```css
+.hl-h  { color: #68ecec; }   /* # headers */
+.hl-l  { color: #9fe872; }   /* - * + lists */
+.hl-q  { color: #f27d86; }   /* > quotes */
+.hl-c  { color: #bc85f9; }   /* ` ``` code */
+.hl-em { color: #fee383; }   /* **bold** *italic* */
+```
+
+**`theme.editor.css` — rendered view**
+
+```css
+:root {
+  --bg:        #1f1e1d;   /* background */
+  --bg-soft:   #262624;   /* block backgrounds (pre, th) */
+  --bg-code:   #2a2826;   /* inline code background */
+  --fg:        #fafaf9;   /* text */
+  --fg-dim:    #8b8782;   /* secondary text */
+  --heading:   #fafaf9;   /* headings */
+  --accent:    #c96442;   /* links, markers, caret */
+  --rule:      #3a3735;   /* borders and separators */
+  --quote-bar: #c96442;   /* blockquote side bar */
+}
+```
+
+### Changing fonts
+
+**Step 1 — add the file.** Drop any `.ttf`, `.otf`, `.woff`, or `.woff2` into `theme/`. `mini` registers it automatically at startup, using the **filename (without extension)** as the `font-family`.
 
 ```
 theme/
 ├── Inter.ttf            → font-family: 'Inter'
 ├── JetBrainsMono.ttf    → font-family: 'JetBrainsMono'
-└── copernicus.ttf       → font-family: 'copernicus' (incluida por defecto)
+└── copernicus.ttf       → font-family: 'copernicus' (bundled by default)
 ```
 
-**Paso 2 — úsala en el tema.** Cada CSS expone variables de tipografía:
+**Step 2 — use it in the theme.** Each CSS file exposes typography variables:
 
 ```css
 /* theme.source.css */
@@ -183,7 +183,7 @@ theme/
 }
 ```
 
-¿Necesitas varios pesos? Suelta `Inter-Regular.ttf` e `Inter-Bold.ttf` y agrúpalas en una sola familia con `@font-face`:
+Need multiple weights? Drop `Inter-Regular.ttf` and `Inter-Bold.ttf` and group them under one family with `@font-face`:
 
 ```css
 @font-face {
@@ -198,17 +198,17 @@ theme/
 }
 ```
 
-> El esquema `theme://` apunta a tu carpeta `theme/`. Úsalo para enlazar fuentes, imágenes de fondo o cualquier asset desde el CSS.
+> The `theme://` scheme points to your `theme/` folder. Use it to link fonts, background images, or any asset from CSS.
 
-### Tamaño, interlineado y detalles
+### Size, line height, and details
 
-Más allá de colores y fuentes, puedes ajustar cualquier propiedad CSS estándar:
+Beyond colors and fonts, you can tweak any standard CSS property:
 
 ```css
 /* theme.editor.css */
 html, body {
-  font-size: 16px;        /* tamaño base */
-  line-height: 1.8;       /* interlineado */
+  font-size: 16px;        /* base size */
+  line-height: 1.8;       /* line spacing */
 }
 
 h1 { font-size: 2.2em; border-bottom: 2px solid var(--accent); }
@@ -216,7 +216,7 @@ blockquote { font-style: normal; border-left-width: 4px; }
 pre { border-radius: 12px; }
 ```
 
-En la vista de fuente puedes ajustar el espaciado entre caracteres, ligaduras, etc.:
+In the source view you can also tune character spacing, ligatures, and more:
 
 ```css
 /* theme.source.css */
@@ -224,20 +224,20 @@ html, body {
   font-size: 14px;
   line-height: 1.7;
   letter-spacing: 0.01em;
-  font-feature-settings: "liga" 1, "calt" 1;   /* activa ligaduras */
+  font-feature-settings: "liga" 1, "calt" 1;   /* enable ligatures */
 }
 ```
 
-### Aplicar los cambios
+### Apply the changes
 
-Guarda los archivos y **reinicia `mini`** (`⌘Q` y vuelve a abrir). El tema se carga al arranque.
+Save the files and **restart `mini`** (`⌘Q` and reopen). The theme loads at startup.
 
-### Empezar de cero
+### Starting from scratch
 
-Los archivos `theme.source.css` y `theme.editor.css` que vienen con la app son la mejor referencia: están comentados y muestran todas las variables disponibles. Cópialos, modifícalos, y rompe lo que quieras — siempre puedes volver al original.
+The bundled `theme.source.css` and `theme.editor.css` are the best reference: they're commented and show every available variable. Copy them, change them, break things — you can always go back to the originals.
 
 ---
 
-## Licencia
+## License
 
-Pendiente de definir.
+To be defined.
