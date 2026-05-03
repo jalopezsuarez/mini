@@ -2304,23 +2304,7 @@ window.mini.onOpenFileFromOS(({ path: p, content }) => {
   updateProgress();
 });
 
-// Seed sample content
-source.value = [
-  '# mini',
-  '',
-  'A tiny markdown editor. Edit me with `⌘B`, `⌘I`, `⌘H`, `⌘Q`, `⌘S`, `⌘L`, `⌘N`.',
-  'Toggle source ⇄ preview with `⌘V`. Save with `⌘⇧S`.',
-  '',
-  '> Both panes are editable.',
-  '',
-  '- one',
-  '- two',
-  '- three',
-  '',
-  '```js',
-  'console.log("hello, mini");',
-  '```',
-].join('\n');
+source.value = '';
 state.baseline = source.value;
 highlightSource();
 updateMeta();
