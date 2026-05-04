@@ -6,6 +6,30 @@
 
 ---
 
+## Download
+
+Grab the latest build from the [releases page](https://github.com/jalopezsuarez/mini/releases/latest):
+
+| Platform              | File                       |
+| --------------------- | -------------------------- |
+| macOS — Apple Silicon | `mini-<version>-arm64.zip` |
+| macOS — Intel         | `mini-<version>-x64.zip`   |
+| Windows x64           | `mini-<version>-win-x64.zip` |
+
+Unzip and drag `mini.app` (macOS) or the folder (Windows) wherever you keep your apps.
+
+### First launch on macOS
+
+The macOS builds are signed *ad-hoc* (not with an Apple Developer ID), so the very first time you open the app macOS will warn that it's *from an unidentified developer*. Just **right-click `mini.app` → Open** once and afterwards it launches normally like any other app.
+
+If you ever still see *"mini" is damaged and can't be opened* (very old downloads, unusual mirrors), strip the quarantine attribute manually:
+
+```bash
+xattr -cr /Applications/mini.app
+```
+
+---
+
 ## Why you'll like it
 
 - **Zero clutter.** No endless settings, no surprises. Just your text.
@@ -102,17 +126,7 @@ npm run package:universal
 npm run package:win
 ```
 
-The resulting bundle ends up in `dist/`. On macOS the build is **ad-hoc signed and zipped with `ditto`** (see `scripts/sign-mac.sh`) so Gatekeeper doesn't flag the download as *"mini" is damaged and can't be opened*.
-
-### First launch on macOS
-
-`mini` is signed ad-hoc, not with an Apple Developer ID, so the very first time you open it macOS will show *"mini" can't be opened because it is from an unidentified developer*. To bypass it just **right-click `mini.app` → Open** once. Afterwards it launches normally like any other app.
-
-If you ever do see the *"is damaged"* dialog (very old downloads, unusual mirrors), strip the quarantine attribute manually:
-
-```bash
-xattr -cr /Applications/mini.app
-```
+The resulting bundle ends up in `dist/`. On macOS the build is **ad-hoc signed and zipped with `ditto`** (see `scripts/sign-mac.sh`) so Gatekeeper doesn't flag the download as *"mini" is damaged and can't be opened*. See [First launch on macOS](#first-launch-on-macos) for what end users will see.
 
 ### `mini` terminal command  *(macOS only)*
 
