@@ -2092,6 +2092,7 @@ function run(cmd) {
   if (cmd === 'view') { setMode(state.mode === 'source' ? 'editor' : 'source'); return; }
   if (cmd === 'open') { openFile(); return; }
   if (cmd === 'save') { saveFile(); return; }
+  if (cmd === 'reloadDisk') { reloadFromDisk(); return; }
   // Content-modifying commands: snapshot before so they're undoable.
   const ephemeral = new Set(['fontUp', 'fontDown']);
   if (!ephemeral.has(cmd)) pushUndo('cmd:' + cmd);
@@ -2604,6 +2605,7 @@ const HINTS = {
   deleteRow: `${MOD}${SHIFT}T · Remove Row`,
   addCol:    `${MOD}G · Add Col`,
   removeCol: `${MOD}${SHIFT}G · Remove Col`,
+  reloadDisk:`${MOD}${SHIFT}R · Reload from Disk`,
   fontUp:    `${MOD}+ · Zoom In`,
   fontDown:  `${MOD}− · Zoom Out`,
 };

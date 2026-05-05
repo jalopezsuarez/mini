@@ -120,8 +120,10 @@ $RECYCLE.BIN/
 # Code signing (macOS/Windows)
 # ===========================
 *.p12
+*.pfx
 *.mobileprovision
 build/entitlements.mac.plist.bak
+build/winsign.pfx
 # Renderer bundle (built by esbuild)
 src/renderer.bundle.js
 src/renderer.bundle.js.map

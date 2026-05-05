@@ -1,16 +1,18 @@
 {
   "name": "mini",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Minimalist macOS markdown editor.",
   "main": "main.js",
   "scripts": {
     "build": "esbuild src/renderer.js --bundle --outfile=src/renderer.bundle.js --format=iife --platform=browser --sourcemap",
     "watch": "esbuild src/renderer.js --bundle --outfile=src/renderer.bundle.js --format=iife --platform=browser --sourcemap --watch",
     "start": "npm run build && electron .",
-    "package": "npm run build && electron-packager . mini --platform=darwin --arch=arm64 --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.2 --icon=build/icon.icns && scripts/sign-mac.sh dist/mini-darwin-arm64 dist/mini-0.2.2-arm64.zip",
-    "package:intel": "npm run build && electron-packager . mini --platform=darwin --arch=x64 --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.2 --icon=build/icon.icns && scripts/sign-mac.sh dist/mini-darwin-x64 dist/mini-0.2.2-x64.zip",
-    "package:universal": "npm run build && electron-packager . mini --platform=darwin --arch=universal --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.2 --icon=build/icon.icns && scripts/sign-mac.sh dist/mini-darwin-universal dist/mini-0.2.2-universal.zip",
-    "package:win": "npm run build && electron-packager . mini --platform=win32 --arch=x64 --overwrite --out=dist --app-version=0.2.2"
+    "package": "npm run build && electron-packager . mini --platform=darwin --arch=arm64 --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.3 --icon=build/icon.icns && scripts/sign-mac.sh dist/mini-darwin-arm64 dist/mini-0.2.3-arm64.zip",
+    "package:intel": "npm run build && electron-packager . mini --platform=darwin --arch=x64 --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.3 --icon=build/icon.icns && scripts/sign-mac.sh dist/mini-darwin-x64 dist/mini-0.2.3-x64.zip",
+    "package:universal": "npm run build && electron-packager . mini --platform=darwin --arch=universal --overwrite --out=dist --app-bundle-id=com.mini.app --app-version=0.2.3 --icon=build/icon.icns && scripts/sign-mac.sh dist/mini-darwin-universal dist/mini-0.2.3-universal.zip",
+    "package:win": "npm run build && electron-packager . mini --platform=win32 --arch=x64 --overwrite --out=dist --app-version=0.2.3 && scripts/sign-win.sh dist/mini-win32-x64 dist/mini-0.2.3-win32-x64.zip",
+    "package:linux": "npm run build && electron-packager . mini --platform=linux --arch=x64 --overwrite --out=dist --app-version=0.2.3 && scripts/pack-linux.sh dist/mini-linux-x64 dist/mini-0.2.3-linux-x64.tar.gz",
+    "package:linux:arm64": "npm run build && electron-packager . mini --platform=linux --arch=arm64 --overwrite --out=dist --app-version=0.2.3 && scripts/pack-linux.sh dist/mini-linux-arm64 dist/mini-0.2.3-linux-arm64.tar.gz"
   },
   "dependencies": {
     "@codemirror/commands": "^6.6.0",
