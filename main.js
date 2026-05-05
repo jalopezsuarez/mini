@@ -47,15 +47,34 @@ function createWindow(opts = {}) {
   const loadOpts = opts.fresh ? { query: { fresh: '1' } } : undefined;
   win.loadFile(path.join(__dirname, 'src', 'index.html'), loadOpts);
 
-  // Reload is intentionally disabled. Block F5 and ⌘⇧R / Ctrl+Shift+R at
-  // the webContents level (menu item is also gone). Plain ⌘R / Ctrl+R is
-  // the editor's blockquote shortcut — the renderer handles it and calls
-  // preventDefault, so no reload fires there either.
+  // Web reload is intentionally disabled. F5 has no menu binding, so we
+  // block it here. ⌘⇧R / Ctrl+Shift+R is captured by the "Reload from
+  // Disk" menu item below, which preempts the default reload accelerator.
+  // Plain ⌘R / Ctrl+R is the editor's blockquote shortcut — the renderer
+  // handles it and calls preventDefault.
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const k = (input.key || '').toLowerCase();
     if (k === 'f5') return event.preventDefault();
-    if ((input.meta || input.control) && input.shift && k === 'r') return event.preventDefault();
+  });
+
+  // Drop the global reference once the window is gone so later events
+  // (open-file, menu actions) don't touch a destroyed BrowserWindow.
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+
+  // Deliver any file queued from a Finder/CLI open — works for the very
+  // first window after launch and for windows reopened after a close.
+  win.webContents.once('did-finish-load', () => {
+    if (!pendingOpenPath) return;
+    const p = pendingOpenPath;
+    pendingOpenPath = null;
+    safeReadFile(p, win).then((content) => {
+      if (content == null) return;
+      if (win.isDestroyed()) return;
+      win.webContents.send('open-file-from-os', { path: p, content });
+    });
   });
 
   if (!mainWindow) mainWindow = win;
@@ -92,6 +111,8 @@ const macMenu = Menu.buildFromTemplate([
       { type: 'separator' },
       { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => sendToFocused('menu', 'save') },
       { label: 'Save As…', accelerator: 'Shift+CmdOrCtrl+S', click: () => sendToFocused('menu', 'saveAs') },
+      { type: 'separator' },
+      { label: 'Reload from Disk', accelerator: 'Shift+CmdOrCtrl+R', click: () => sendToFocused('menu', 'reloadDisk') },
       { type: 'separator' },
       { label: 'Close', accelerator: 'CmdOrCtrl+W', click: () => sendToFocused('menu', 'close') },
     ],
@@ -157,16 +178,9 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(macMenu);
   createWindow();
 
-  // Offer to install the `mini` CLI shortcut on first run.
+  // Offer to install the `mini` CLI shortcut on first run. The pending-open
+  // delivery is handled inside createWindow so it survives window reopens.
   mainWindow.webContents.once('did-finish-load', () => {
-    if (pendingOpenPath) {
-      const p = pendingOpenPath;
-      pendingOpenPath = null;
-      safeReadFile(p, mainWindow).then((content) => {
-        if (content == null) return;
-        mainWindow.webContents.send('open-file-from-os', { path: p, content });
-      });
-    }
     maybeOfferCliInstall().catch((e) => console.warn('cli install offer failed', e));
   });
 
@@ -268,14 +282,19 @@ async function safeReadFile(filePath /*, parentWin */) {
 
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
-  if (mainWindow && mainWindow.webContents) {
-    safeReadFile(filePath, mainWindow).then((content) => {
+  // The app may be running without any window (closed on macOS) — in that
+  // case `mainWindow` still holds a reference whose webContents is gone.
+  const win = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null;
+  if (win) {
+    safeReadFile(filePath, win).then((content) => {
       if (content == null) return;
-      mainWindow.webContents.send('open-file-from-os', { path: filePath, content });
+      if (win.isDestroyed()) return;
+      win.webContents.send('open-file-from-os', { path: filePath, content });
     });
-  } else {
-    pendingOpenPath = filePath;
+    return;
   }
+  pendingOpenPath = filePath;
+  if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
 ipcMain.handle('open-file', async (e) => {
@@ -288,6 +307,20 @@ ipcMain.handle('open-file', async (e) => {
   const content = await safeReadFile(filePaths[0], win);
   if (content == null) return null;
   return { path: filePaths[0], content };
+});
+
+ipcMain.handle('confirm-reload', async (e, name) => {
+  const win = BrowserWindow.fromWebContents(e.sender) || mainWindow;
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    title: 'Recargar desde disco',
+    message: `Descartar cambios en "${name || 'este documento'}"?`,
+    detail: 'Los cambios sin guardar se perderán al recargar el archivo desde disco.',
+    buttons: ['Recargar', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  return response === 0;
 });
 
 ipcMain.handle('read-file', async (e, filePath) => {

@@ -2171,6 +2171,12 @@ function captureCurrentTab() {
   t.path = state.filePath;
   t.name = state.filePath ? basename(state.filePath) : 'untitled.md';
   t.mode = state.mode;
+  // Editor mode has no built-in state object like CodeMirror's, so we
+  // stash caret offset + scroll so the next switch restores the view.
+  if (state.mode === 'editor') {
+    t.editorOffset = getEditorCaretOffset();
+    t.editorScroll = editor.scrollTop;
+  }
 }
 
 function loadTab(t) {
@@ -2200,6 +2206,14 @@ function loadTab(t) {
     else                         { editor.hidden = true;  source.hidden = false; }
     state.mode = targetMode;
     app.dataset.mode = targetMode;
+  }
+
+  // Restore the editor's view (CodeMirror handles this for source via setState).
+  if (targetMode === 'editor') {
+    requestAnimationFrame(() => {
+      if (typeof t.editorScroll === 'number') editor.scrollTop = t.editorScroll;
+      if (typeof t.editorOffset === 'number') setEditorCaretByOffset(t.editorOffset);
+    });
   }
 
   updateMeta();
@@ -3088,12 +3102,45 @@ window.addEventListener('keydown', (e) => {
 }, { capture: true });
 
 window.mini.onMenu((action) => {
-  if (action === 'new')    newTab();
-  if (action === 'open')   openFile();
-  if (action === 'save')   saveFile(false);
-  if (action === 'saveAs') saveFile(true);
-  if (action === 'close')  closeAction();
+  if (action === 'new')        newTab();
+  if (action === 'open')       openFile();
+  if (action === 'save')       saveFile(false);
+  if (action === 'saveAs')     saveFile(true);
+  if (action === 'reloadDisk') reloadFromDisk();
+  if (action === 'close')      closeAction();
 });
+
+async function reloadFromDisk() {
+  if (state.currentTabIndex < 0) return;
+  const t = state.tabs[state.currentTabIndex];
+  if (!t.path) return; // untitled buffer — nothing to reload
+  if (state.dirty) {
+    const ok = await window.mini.confirmReload(t.name);
+    if (!ok) return;
+  }
+  const data = await window.mini.readFile(t.path);
+  if (!data) return;
+  const newState = makeCMState(data.content);
+  cmView.setState(newState);
+  t.cmState = newState;
+  t.baseline = data.content;
+  t.dirty = false;
+  t.editorOffset = 0;
+  t.editorScroll = 0;
+  state.baseline = data.content;
+  state.dirty = false;
+  app.dataset.dirty = 'false';
+  if (state.mode === 'editor') {
+    editor.innerHTML = mdToHtml(source.value);
+    ensureTrailingParagraph();
+    editor.scrollTop = 0;
+  }
+  renderSidebar();
+  persistTabs();
+  updateMeta();
+  updateProgress();
+  updateLineInfo();
+}
 
 /* Files passed from the OS (mini archivo.md, Finder, drag-onto-dock). */
 window.mini.onZoom((delta) => run(delta > 0 ? 'fontUp' : 'fontDown'));

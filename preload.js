@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('mini', {
   openFile: () => ipcRenderer.invoke('open-file'),
   saveFile: (data) => ipcRenderer.invoke('save-file', data),
   readFile: (p) => ipcRenderer.invoke('read-file', p),
+  confirmReload: (name) => ipcRenderer.invoke('confirm-reload', name),
   closeWindow: () => ipcRenderer.send('close-window'),
   getThemeCSS: () => ipcRenderer.invoke('get-theme-css'),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, action) => cb(action)),
